@@ -11,17 +11,17 @@ import { Meal } from '@/types';
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, meals, onboarding, getWeeklyStats, getTodaysMeals } = useApp();
+  const { user, meals, onboarding, isLoading, getWeeklyStats, getTodaysMeals } = useApp();
   const [refreshing, setRefreshing] = useState(false);
 
   const weeklyStats = getWeeklyStats();
   const todaysMeals = getTodaysMeals();
 
   useEffect(() => {
-    if (!onboarding.completed) {
+    if (!isLoading && !onboarding.completed) {
       router.replace('/onboarding');
     }
-  }, [onboarding.completed, router]);
+  }, [isLoading, onboarding.completed, router]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -84,7 +84,7 @@ export default function HomeScreen() {
     );
   };
 
-  if (!onboarding.completed) {
+  if (isLoading || !onboarding.completed) {
     return null;
   }
 
