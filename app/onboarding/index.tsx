@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View, TouchableOpacity, ImageBackground } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,25 +8,34 @@ export default function WelcomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
+  const handleSignup = () => {
+    console.log('Get Started pressed');
+    router.push('/onboarding/signup');
+  };
+
+  const handleLogin = () => {
+    console.log('Already have account pressed');
+    router.push('/onboarding/login');
+  };
+
   return (
-    <ImageBackground
-      source={{ uri: 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=800' }}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <LinearGradient
-        colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.7)']}
+        colors={['#E8F5E9', '#F1F8F0', '#FFF8F0']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
         style={styles.gradient}
       >
-        <View style={[styles.content, { paddingTop: insets.top + 60, paddingBottom: insets.bottom + 20 }]}>
+        <View style={[styles.content, { paddingTop: insets.top + 60 }]}>
           <View style={styles.heroSection}>
-            <Text style={styles.heroHeading}>Know Your Food{'\n'}Triggers in 3 Seconds</Text>
-            <Text style={styles.subheading}>AI-powered food scanner for gut health</Text>
+            <Text style={styles.heroHeading}>Eat with{'\n'}Confidence</Text>
+            <Text style={styles.subheading}>Stop guessing. Start living.</Text>
           </View>
 
-          <View style={styles.buttonSection}>
+          <View style={[styles.buttonSection, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             <TouchableOpacity
               style={styles.primaryButton}
-              onPress={() => router.push('/onboarding/signup')}
+              onPress={handleSignup}
               activeOpacity={0.8}
             >
               <Text style={styles.primaryButtonText}>Get Started</Text>
@@ -34,7 +43,7 @@ export default function WelcomeScreen() {
 
             <TouchableOpacity
               style={styles.secondaryButton}
-              onPress={() => router.replace('/(tabs)')}
+              onPress={handleLogin}
               activeOpacity={0.7}
             >
               <Text style={styles.secondaryButtonText}>Already have an account?</Text>
@@ -42,7 +51,7 @@ export default function WelcomeScreen() {
           </View>
         </View>
       </LinearGradient>
-    </ImageBackground>
+    </View>
   );
 }
 
@@ -62,22 +71,25 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 40,
   },
   heroHeading: {
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: '700' as const,
-    color: Colors.white,
+    color: Colors.text,
     textAlign: 'center',
-    lineHeight: 40,
+    lineHeight: 44,
     marginBottom: 16,
   },
   subheading: {
-    fontSize: 16,
-    color: '#B0B0B0',
+    fontSize: 18,
+    color: Colors.textSecondary,
     textAlign: 'center',
+    fontWeight: '500' as const,
   },
   buttonSection: {
     gap: 16,
+    zIndex: 10,
   },
   primaryButton: {
     backgroundColor: Colors.primary,
@@ -92,13 +104,17 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   secondaryButton: {
-    height: 44,
+    height: 52,
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
   },
   secondaryButtonText: {
-    color: Colors.primary,
-    fontSize: 14,
-    fontWeight: '500' as const,
+    color: Colors.text,
+    fontSize: 16,
+    fontWeight: '600' as const,
   },
 });

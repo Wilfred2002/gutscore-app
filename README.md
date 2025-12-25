@@ -236,24 +236,90 @@ bun start --dev-client
 
 Integrate with backend services:
 
-- **Supabase** - PostgreSQL database with real-time features
+- **Supabase** - PostgreSQL database with real-time features ✅ **CONFIGURED IN THIS APP**
 - **Firebase** - Google's mobile development platform
 - **Custom API** - Connect to your own backend
 
-### **Add Authentication**
+#### **Supabase Setup (Required for this app)**
 
-Implement user authentication:
+This app uses Supabase for authentication (including Google Sign-In) and database. Follow these steps to get started:
 
-**Basic Authentication (works in Expo Go):**
+**1. Create a Supabase Project**
+- Go to [supabase.com](https://supabase.com) and sign up/login
+- Click "New Project"
+- Fill in your project details (name, password, region)
+- Wait ~2 minutes for initialization
 
-- **Expo AuthSession** - OAuth providers (Google, Facebook, Apple) - [Guide](https://docs.expo.dev/guides/authentication/)
-- **Supabase Auth** - Email/password and social login - [Integration Guide](https://supabase.com/docs/guides/getting-started/tutorials/with-expo-react-native)
-- **Firebase Auth** - Comprehensive authentication solution - [Setup Guide](https://docs.expo.dev/guides/using-firebase/)
+**2. Run the Database Migration**
+- In Supabase dashboard, go to **SQL Editor** (left sidebar)
+- Click "New query"
+- Copy and paste your existing SQL schema (you already have this!)
+- Click "Run" to create all necessary tables and security policies
 
-**Native Authentication (requires Custom Development Build):**
+**3. Configure Environment Variables**
+- In Supabase dashboard, go to **Settings** > **API**
+- Copy your **Project URL** (e.g., `https://xxxxx.supabase.co`)
+- Copy your **anon/public key** (under "Project API keys")
+- Create a `.env.local` file in the root of your project:
+  ```bash
+  EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+  EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+  ```
+- See `.env.example` for the template
 
-- **Apple Sign In** - Native Apple authentication - [Implementation Guide](https://docs.expo.dev/versions/latest/sdk/apple-authentication/)
-- **Google Sign In** - Native Google authentication - [Setup Guide](https://docs.expo.dev/guides/google-authentication/)
+**4. Set Up Google Sign-In (Optional but Recommended)**
+For detailed Google OAuth setup instructions, see `SUPABASE_SETUP.md`
+
+Quick steps:
+- Create a Google Cloud Console project
+- Configure OAuth consent screen
+- Create Web OAuth client credentials
+- Add credentials to Supabase **Authentication** > **Providers** > **Google**
+- Configure redirect URLs
+
+**5. Build and Run**
+Google Sign-In requires a development build (not Expo Go):
+```bash
+# Build for iOS (requires macOS + Xcode)
+npx expo run:ios
+
+# Build for Android
+npx expo run:android
+
+# Or use Expo Go for testing (Google Sign-In won't work, but email/password will)
+npm start
+```
+
+**What's Included:**
+- ✅ Email/Password authentication (signup, login, password reset)
+- ✅ Google Sign-In OAuth (requires development build)
+- ✅ User profiles with IBS/SIBO tracking
+- ✅ Meal scanning and gut health scores
+- ✅ Symptom logging with meal correlation
+- ✅ Food trigger detection
+- ✅ Weekly gut health analytics
+- ✅ Row Level Security (users can only see their own data)
+
+**Need Help?** Check `SUPABASE_SETUP.md` for detailed setup instructions, Google OAuth configuration, and troubleshooting.
+
+### **Authentication (Already Configured!)**
+
+This app already includes **Supabase Authentication** with:
+
+✅ **Email/Password Sign-Up & Login** - Works in Expo Go
+✅ **Google Sign-In** - Requires development build (see `SUPABASE_SETUP.md`)
+✅ **Password Reset** via email
+✅ **Session management** with automatic token refresh
+✅ **Row Level Security** for data privacy
+
+**Want to add more auth providers?**
+
+- **Apple Sign In** - [Supabase Apple Auth Guide](https://supabase.com/docs/guides/auth/social-login/auth-apple)
+- **Facebook Login** - [Supabase Facebook Auth Guide](https://supabase.com/docs/guides/auth/social-login/auth-facebook)
+- **GitHub Login** - [Supabase GitHub Auth Guide](https://supabase.com/docs/guides/auth/social-login/auth-github)
+
+All social providers work with the same OAuth flow already implemented for Google Sign-In.
 
 ### **Add Push Notifications**
 

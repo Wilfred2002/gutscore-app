@@ -1,97 +1,40 @@
-import { Meal, Symptom, Trigger, DailyScore, DetectedFood, FoodSwap } from '@/types';
+/**
+ * Constants & Temporary Demo Data
+ *
+ * This file contains:
+ * - UI constants (symptom types, dietary options, etc.)
+ * - Temporary mock data for demo features (until AI integration)
+ */
 
-export const mockUser = {
-  id: '1',
-  email: 'sarah@email.com',
-  name: 'Sarah J.',
-  hasIBS: true,
-  dietaryRestrictions: ['Vegetarian', 'Gluten-Free'],
-  ageRange: '25-40',
-  symptomFrequency: '2-3 times per week',
-  gutConcern: 'IBS',
-  streak: 7,
-  isPro: false,
-};
+import { Trigger, DailyScore, DetectedFood, FoodSwap } from '@/types';
 
+// ============================================
+// TEMPORARY - For demo UI only
+// ============================================
+// Will be replaced with real AI/database integration
+
+/** Temporary: Mock food detection results - Replace with OpenAI Vision API */
 export const mockFoods: DetectedFood[] = [
   { id: '1', name: 'Scrambled Eggs', confidence: 98, emoji: '🍳' },
   { id: '2', name: 'Toast', confidence: 94, emoji: '🍞' },
   { id: '3', name: 'Butter', confidence: 87, emoji: '🧈' },
 ];
 
+/** Temporary: Mock food swaps - Replace with AI recommendations */
 export const mockSwaps: FoodSwap[] = [
   { id: '1', name: 'Whole Wheat Toast', emoji: '🌾', scoreIncrease: 3 },
   { id: '2', name: 'Avocado', emoji: '🥑', scoreIncrease: 5 },
   { id: '3', name: 'Lactose-Free Butter', emoji: '🧈', scoreIncrease: 2 },
 ];
 
-export const mockMeals: Meal[] = [
-  {
-    id: '1',
-    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-    imageUri: 'https://images.unsplash.com/photo-1525351484163-7529414344d8?w=400',
-    foods: mockFoods,
-    score: 92,
-    fodmapRisk: 18,
-    fermentation: 25,
-    fiberDiversity: 8,
-    probioticBoost: 2,
-    status: 'safe',
-    analysis: [
-      'Low-FODMAP vegetables',
-      'Easily digestible protein',
-      'Moderate fiber content',
-    ],
-    triggers: [
-      'You may have mild sensitivity to butter (lactose). Consider lactose-free alternative.',
-    ],
-    swaps: mockSwaps,
-  },
-  {
-    id: '2',
-    timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000),
-    imageUri: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
-    foods: [
-      { id: '4', name: 'Grilled Chicken', confidence: 96, emoji: '🍗' },
-      { id: '5', name: 'Quinoa', confidence: 91, emoji: '🌾' },
-      { id: '6', name: 'Steamed Broccoli', confidence: 89, emoji: '🥦' },
-    ],
-    score: 88,
-    fodmapRisk: 22,
-    fermentation: 30,
-    fiberDiversity: 7,
-    probioticBoost: 3,
-    status: 'safe',
-    analysis: [
-      'High-quality protein source',
-      'Good fiber diversity',
-      'Low fermentation risk',
-    ],
-    triggers: [],
-    swaps: [
-      { id: '4', name: 'Brown Rice', emoji: '🍚', scoreIncrease: 2 },
-    ],
-  },
-];
-
-export const mockSymptoms: Symptom[] = [
-  {
-    id: '1',
-    timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000),
-    types: ['Bloating', 'Gas'],
-    intensity: 4,
-    mealAssociation: '2_3_hours',
-    associatedMealId: '1',
-    notes: 'Felt a bit uncomfortable after lunch',
-  },
-];
-
+/** Temporary: Mock triggers - Replace with real ML-based trigger detection */
 export const mockTriggers: Trigger[] = [
   { id: '1', name: 'Onions', confidence: 92, status: 'avoid' },
   { id: '2', name: 'Wheat', confidence: 78, status: 'limit' },
   { id: '3', name: 'Dairy', confidence: 64, status: 'monitor' },
 ];
 
+/** Temporary: Mock weekly scores - Replace with Supabase weekly_scores aggregation */
 export const mockWeeklyScores: DailyScore[] = [
   { day: 'Mon', score: 75 },
   { day: 'Tue', score: 82 },
@@ -101,6 +44,10 @@ export const mockWeeklyScores: DailyScore[] = [
   { day: 'Sat', score: 88 },
   { day: 'Sun', score: 80 },
 ];
+
+// ============================================
+// UI CONSTANTS - Active
+// ============================================
 
 export const symptomTypes = [
   'Bloating',
@@ -113,10 +60,10 @@ export const symptomTypes = [
 ];
 
 export const gutConcerns = [
-  { id: 'ibs', label: 'IBS - Bloating, cramping, irregular BMs', emoji: '🔹' },
-  { id: 'sibo', label: 'SIBO - Severe gas, food sensitivities', emoji: '🔹' },
-  { id: 'wellness', label: 'General Wellness - Optimize digestion', emoji: '🔹' },
-  { id: 'skip', label: 'Prefer not to say', emoji: '🔹' },
+  { id: 'ibs', label: 'IBS - Bloating, cramping, irregular BMs' },
+  { id: 'sibo', label: 'SIBO - Severe gas, food sensitivities' },
+  { id: 'wellness', label: 'General Wellness - Optimize digestion' },
+  { id: 'skip', label: 'Prefer not to say' },
 ];
 
 export const dietaryOptions = [

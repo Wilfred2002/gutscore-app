@@ -24,12 +24,20 @@ const checklistItems: ChecklistItemType[] = [
 export default function ChecklistScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { onboarding, completeOnboarding } = useApp();
+  const { session, onboarding, completeOnboarding } = useApp();
 
   const completedCount = Object.values(onboarding.checklistItems).filter(Boolean).length;
   const progress = (completedCount / checklistItems.length) * 100;
 
   const handleStartScanning = async () => {
+    // Check if user is authenticated
+    if (!session?.user) {
+      // Not authenticated, redirect to signup
+      router.replace('/onboarding/signup');
+      return;
+    }
+
+    // Complete onboarding and go to main app
     await completeOnboarding();
     router.replace('/(tabs)');
   };
@@ -65,7 +73,7 @@ export default function ChecklistScreen() {
                 )}
               </View>
               <Text style={[styles.checklistText, completed && styles.checklistTextCompleted]}>
-                {completed ? '✓ ' : ''}{item.label}
+                {item.label}
               </Text>
             </TouchableOpacity>
           );

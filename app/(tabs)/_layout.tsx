@@ -1,8 +1,21 @@
-import { Tabs } from 'expo-router';
+import { Tabs, Redirect } from 'expo-router';
 import { Home, Camera, BarChart3, User } from 'lucide-react-native';
 import Colors from '@/constants/colors';
+import { useApp } from '@/contexts/AppContext';
 
 export default function TabLayout() {
+  const { session, isLoading } = useApp();
+
+  // Show nothing while checking auth
+  if (isLoading) {
+    return null;
+  }
+
+  // Redirect to onboarding if not authenticated
+  if (!session?.user) {
+    return <Redirect href="/onboarding" />;
+  }
+
   return (
     <Tabs
       screenOptions={{

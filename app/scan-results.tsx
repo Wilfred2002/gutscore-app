@@ -22,7 +22,7 @@ export default function ScanResultsScreen() {
     const newMeal: Meal = {
       id: Date.now().toString(),
       timestamp: new Date(),
-      imageUri: 'https://images.unsplash.com/photo-1525351484163-7529414344d8?w=400',
+      imageUri: undefined, // TODO: Add camera integration for meal photos
       foods: mockFoods,
       score,
       fodmapRisk,

@@ -14,11 +14,7 @@ function RootLayoutNav() {
   return (
     <Stack screenOptions={{ headerBackTitle: "Back" }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="onboarding/index" options={{ headerShown: false }} />
-      <Stack.Screen name="onboarding/signup" options={{ headerShown: false }} />
-      <Stack.Screen name="onboarding/quiz" options={{ headerShown: false }} />
-      <Stack.Screen name="onboarding/permissions" options={{ headerShown: false }} />
-      <Stack.Screen name="onboarding/checklist" options={{ headerShown: false }} />
+      <Stack.Screen name="onboarding" options={{ headerShown: false }} />
       <Stack.Screen 
         name="scan-results" 
         options={{ 

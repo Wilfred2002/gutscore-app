@@ -1,15 +1,15 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Eye, EyeOff, ArrowLeft } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 
-export default function SignUpScreen() {
+export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { updateOnboarding, signUp, signInWithGoogle } = useApp();
+  const { signIn, signInWithGoogle } = useApp();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -19,27 +19,26 @@ export default function SignUpScreen() {
 
   const validateForm = () => {
     const newErrors: { email?: string; password?: string } = {};
-    
+
     if (!email || !/\S+@\S+\.\S+/.test(email)) {
       newErrors.email = 'Please enter a valid email address';
     }
-    if (!password || password.length < 8) {
-      newErrors.password = 'Password must be at least 8 characters';
+    if (!password) {
+      newErrors.password = 'Please enter your password';
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleContinue = async () => {
+  const handleLogin = async () => {
     if (!validateForm()) return;
 
     setIsLoading(true);
     setErrors({});
 
     try {
-      // Sign up with Supabase
-      const { data, error } = await signUp(email, password);
+      const { data, error } = await signIn(email, password);
 
       if (error) {
         setErrors({ general: error });
@@ -47,21 +46,18 @@ export default function SignUpScreen() {
         return;
       }
 
-      // Store user info in onboarding state
-      await updateOnboarding({
-        currentStep: 1,
-        quizAnswers: {
-          email
-        }
-      });
-
+      // Successful login - navigate to main app
       setIsLoading(false);
-      router.push('/onboarding/quiz');
+      router.replace('/(tabs)');
     } catch (error: any) {
-      console.error('Signup error:', error);
-      setErrors({ general: error.message || 'Failed to create account' });
+      console.error('Login error:', error);
+      setErrors({ general: error.message || 'Failed to log in' });
       setIsLoading(false);
     }
+  };
+
+  const handleForgotPassword = () => {
+    router.push('/onboarding/forgot-password');
   };
 
   const handleGoogleSignIn = async () => {
@@ -77,14 +73,9 @@ export default function SignUpScreen() {
         return;
       }
 
-      // Store user info in onboarding state
-      await updateOnboarding({
-        currentStep: 1,
-        quizAnswers: {}
-      });
-
+      // Successful login - navigate to main app
       setIsLoading(false);
-      router.push('/onboarding/quiz');
+      router.replace('/(tabs)');
     } catch (error: any) {
       console.error('Google sign-in error:', error);
       setErrors({ general: error.message || 'Failed to sign in with Google' });
@@ -94,15 +85,15 @@ export default function SignUpScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
       >
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.backButton}
             onPress={() => router.back()}
           >
@@ -110,8 +101,8 @@ export default function SignUpScreen() {
           </TouchableOpacity>
 
           <View style={styles.header}>
-            <Text style={styles.title}>Create Your Account</Text>
-            <Text style={styles.subtitle}>Skip the clutter. Sync later.</Text>
+            <Text style={styles.title}>Welcome Back</Text>
+            <Text style={styles.subtitle}>Log in to continue tracking your gut health</Text>
           </View>
 
           <View style={styles.form}>
@@ -135,7 +126,7 @@ export default function SignUpScreen() {
               <View style={styles.passwordContainer}>
                 <TextInput
                   style={[styles.input, styles.passwordInput, errors.password && styles.inputError]}
-                  placeholder="Min 8 characters"
+                  placeholder="Enter your password"
                   placeholderTextColor={Colors.textTertiary}
                   value={password}
                   onChangeText={setPassword}
@@ -155,6 +146,14 @@ export default function SignUpScreen() {
               </View>
               {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
             </View>
+
+            <TouchableOpacity
+              style={styles.forgotPasswordButton}
+              onPress={handleForgotPassword}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.buttonSection}>
@@ -166,12 +165,12 @@ export default function SignUpScreen() {
 
             <TouchableOpacity
               style={[styles.primaryButton, isLoading && styles.primaryButtonDisabled]}
-              onPress={handleContinue}
+              onPress={handleLogin}
               activeOpacity={0.8}
               disabled={isLoading}
             >
               <Text style={styles.primaryButtonText}>
-                {isLoading ? 'Creating account...' : 'Continue with Email'}
+                {isLoading ? 'Logging in...' : 'Log In'}
               </Text>
             </TouchableOpacity>
 
@@ -191,9 +190,9 @@ export default function SignUpScreen() {
             </TouchableOpacity>
 
             <View style={styles.signupPrompt}>
-              <Text style={styles.signupPromptText}>Already have an account? </Text>
-              <TouchableOpacity onPress={() => router.push('/onboarding/login')}>
-                <Text style={styles.signupLink}>Log In</Text>
+              <Text style={styles.signupPromptText}>Don't have an account? </Text>
+              <TouchableOpacity onPress={() => router.push('/onboarding/signup')}>
+                <Text style={styles.signupLink}>Sign Up</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -279,6 +278,15 @@ const styles = StyleSheet.create({
     right: 16,
     top: 16,
   },
+  forgotPasswordButton: {
+    alignSelf: 'flex-end',
+    paddingVertical: 4,
+  },
+  forgotPasswordText: {
+    fontSize: 14,
+    color: Colors.primary,
+    fontWeight: '500' as const,
+  },
   buttonSection: {
     gap: 12,
     marginTop: 'auto',
@@ -310,6 +318,21 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '600' as const,
   },
+  signupPrompt: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  signupPromptText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+  signupLink: {
+    fontSize: 14,
+    color: Colors.primary,
+    fontWeight: '600' as const,
+  },
   dividerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -327,13 +350,13 @@ const styles = StyleSheet.create({
     fontWeight: '500' as const,
   },
   googleButton: {
+    backgroundColor: Colors.backgroundWhite,
     height: 52,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.backgroundWhite,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   googleButtonDisabled: {
     opacity: 0.6,
@@ -342,29 +365,5 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontSize: 17,
     fontWeight: '600' as const,
-  },
-  signupPrompt: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  signupPromptText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-  },
-  signupLink: {
-    fontSize: 14,
-    color: Colors.primary,
-    fontWeight: '600' as const,
-  },
-  skipButton: {
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  skipButtonText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
   },
 });

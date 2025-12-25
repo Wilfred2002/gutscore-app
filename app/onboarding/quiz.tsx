@@ -145,18 +145,14 @@ export default function QuizScreen() {
                     <View style={[
                       styles.radioInner,
                       step.type === 'multiple' && styles.checkboxInner,
-                    ]}>
-                      {step.type === 'multiple' && (
-                        <Text style={styles.checkmark}>✓</Text>
-                      )}
-                    </View>
+                    ]} />
                   )}
                 </View>
                 <Text style={[
                   styles.optionText,
                   isSelected(option.id) && styles.optionTextSelected,
                 ]}>
-                  {option.emoji ? `${option.emoji} ` : '🔹 '}{option.label}
+                  {option.label}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -289,13 +285,6 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 4,
     backgroundColor: Colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkmark: {
-    color: Colors.white,
-    fontSize: 12,
-    fontWeight: '700' as const,
   },
   optionText: {
     flex: 1,
