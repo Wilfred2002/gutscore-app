@@ -17,14 +17,21 @@ export interface Meal {
   imageUri: string;
   foods: DetectedFood[];
   score: number;
-  fodmapRisk: number;
-  fermentation: number;
-  fiberDiversity: number;
-  probioticBoost: number;
-  status: 'safe' | 'caution' | 'avoid';
-  analysis: string[];
-  triggers: string[];
-  swaps: FoodSwap[];
+  fodmapRisk?: number;
+  fermentation?: number;
+  fiberDiversity?: number;
+  probioticBoost?: number;
+  gutScores?: {
+    fodmap: number;
+    fermentation: number;
+    fiber_diversity: number;
+    probiotic: number;
+  };
+  status?: 'safe' | 'caution' | 'avoid';
+  analysis?: string[];
+  triggers?: string[];
+  swaps?: FoodSwap[];
+  notes?: string;
 }
 
 export interface DetectedFood {

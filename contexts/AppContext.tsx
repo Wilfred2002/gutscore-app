@@ -37,6 +37,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const [user, setUser] = useState<User | null>(null);
   const [meals, setMeals] = useState<Meal[]>([]);
   const [symptoms, setSymptoms] = useState<Symptom[]>([]);
+  const [pendingMeal, setPendingMeal] = useState<Meal | null>(null);
 
   useEffect(() => {
     initializeApp();
@@ -64,7 +65,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       const { data: { session: initialSession } } = await supabase.auth.getSession();
       setSession(initialSession);
 
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
         setSession(newSession);
       });
 
@@ -246,7 +247,13 @@ export const [AppProvider, useApp] = createContextHook(() => {
   };
 
   const addMeal = useCallback(async (meal: Meal) => {
-    if (!session?.user) return;
+    if (!session?.user) {
+      // Store as pending meal if not authenticated
+      setPendingMeal(meal);
+      // Also update local meals state for immediate UI feedback
+      setMeals([meal, ...meals]);
+      return;
+    }
 
     try {
       const { data, error } = await supabase
@@ -280,28 +287,59 @@ export const [AppProvider, useApp] = createContextHook(() => {
     }
   }, [session, meals, onboarding, updateOnboarding]);
 
+  const savePendingMeal = async (userId: string, meal: Meal) => {
+    try {
+      const { error } = await supabase
+        .from('meals')
+        .insert({
+          user_id: userId,
+          foods: meal.foods,
+          gut_scores: meal.gutScores,
+          overall_score: meal.score,
+          photo_url: meal.imageUri,
+          notes: meal.notes,
+          is_sample: false,
+          logged_at: meal.timestamp.toISOString(),
+        });
+
+      if (error) throw error;
+      setPendingMeal(null);
+      await loadUserData(); // Reload to ensure sync
+    } catch (error) {
+      console.error('Error saving pending meal:', error);
+    }
+  };
+
+  // Effect to sync pending meal when user logs in
+  useEffect(() => {
+    if (session?.user && pendingMeal) {
+      savePendingMeal(session.user.id, pendingMeal);
+    }
+  }, [session, pendingMeal]);
+
   const addSymptom = useCallback(async (symptom: Symptom) => {
-    if (!session?.user) return;
+    // Update local state immediately for UI feedback
+    setSymptoms([symptom, ...symptoms]);
+
+    if (!session?.user) {
+      // Just keep in local state if not authenticated
+      return;
+    }
 
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('symptoms')
         .insert({
           user_id: session.user.id,
-          meal_id: symptom.mealId,
-          bloating: symptom.bloating,
-          cramping: symptom.cramping,
-          energy: symptom.energy,
+          associated_meal_id: symptom.associatedMealId,
+          types: symptom.types,
+          intensity: symptom.intensity,
+          meal_association: symptom.mealAssociation,
           notes: symptom.notes,
           logged_at: symptom.timestamp.toISOString(),
-        })
-        .select()
-        .single();
+        });
 
       if (error) throw error;
-
-      // Update local state
-      setSymptoms([symptom, ...symptoms]);
 
       if (!onboarding.checklistItems.loggedSymptom) {
         await updateOnboarding({
@@ -483,10 +521,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const getWeeklyStats = useCallback(() => {
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const weekMeals = meals.filter(m => new Date(m.timestamp) >= weekAgo);
-    const avgScore = weekMeals.length > 0 
+    const avgScore = weekMeals.length > 0
       ? Math.round(weekMeals.reduce((sum, m) => sum + m.score, 0) / weekMeals.length)
       : 0;
-    
+
     return {
       avgScore,
       scoreChange: 5,

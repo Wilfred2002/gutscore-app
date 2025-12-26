@@ -1,21 +1,29 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { Clock, TrendingUp, Camera, ChevronRight } from 'lucide-react-native';
+import { Clock, TrendingUp, Camera, ChevronRight, AlertTriangle } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
-import { Meal } from '@/types';
+import { Meal, Trigger } from '@/types';
+import { analyzeTriggers } from '@/lib/trigger-engine';
 
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, meals, onboarding, isLoading, getWeeklyStats, getTodaysMeals } = useApp();
+  const { user, meals, symptoms, onboarding, isLoading, getWeeklyStats, getTodaysMeals } = useApp();
   const [refreshing, setRefreshing] = useState(false);
+  const [triggers, setTriggers] = useState<Trigger[]>([]);
 
   const weeklyStats = getWeeklyStats();
   const todaysMeals = getTodaysMeals();
+
+  // Run trigger analysis when data changes
+  useEffect(() => {
+    const detectedTriggers = analyzeTriggers(meals, symptoms);
+    setTriggers(detectedTriggers);
+  }, [meals, symptoms]);
 
   useEffect(() => {
     if (!isLoading && !onboarding.completed) {
@@ -25,15 +33,16 @@ export default function HomeScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
+    // Simulate refresh (in production this might re-fetch from Supabase)
     await new Promise(resolve => setTimeout(resolve, 1000));
     setRefreshing(false);
   };
 
   const formatTime = (date: Date) => {
-    return new Date(date).toLocaleTimeString('en-US', { 
-      hour: 'numeric', 
+    return new Date(date).toLocaleTimeString('en-US', {
+      hour: 'numeric',
       minute: '2-digit',
-      hour12: true 
+      hour12: true
     });
   };
 
@@ -48,10 +57,18 @@ export default function HomeScreen() {
     return new Date().toLocaleDateString('en-US', { weekday: 'long' });
   };
 
+  const getStatus = (meal: Meal): 'safe' | 'caution' | 'avoid' => {
+    if (meal.status) return meal.status;
+    if (meal.score >= 80) return 'safe';
+    if (meal.score >= 50) return 'caution';
+    return 'avoid';
+  };
+
   const renderMealCard = (meal: Meal) => {
-    const statusColor = meal.status === 'safe' ? Colors.success : 
-                       meal.status === 'caution' ? Colors.warning : Colors.danger;
-    
+    const status = getStatus(meal);
+    const statusColor = status === 'safe' ? Colors.success :
+      status === 'caution' ? Colors.warning : Colors.danger;
+
     return (
       <TouchableOpacity
         key={meal.id}
@@ -70,7 +87,7 @@ export default function HomeScreen() {
           </Text>
           <View style={styles.mealMeta}>
             <Text style={[styles.mealStatus, { color: statusColor }]}>
-              {meal.status === 'safe' ? '✓ Safe' : meal.status === 'caution' ? '⚠ Caution' : '✕ Avoid'}
+              {status === 'safe' ? '✓ Safe' : status === 'caution' ? '⚠ Caution' : '✕ Avoid'}
             </Text>
             <Text style={styles.mealScore}>Score: {meal.score}/100</Text>
           </View>
@@ -88,6 +105,11 @@ export default function HomeScreen() {
     return null;
   }
 
+  // Calculate live average score
+  const avgScore = meals.length > 0
+    ? Math.round(meals.reduce((acc, m) => acc + m.score, 0) / meals.length)
+    : 0;
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <ScrollView
@@ -99,14 +121,22 @@ export default function HomeScreen() {
         }
       >
         <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Hey {user?.name?.split(' ')[0] || 'there'}, {getDayName()} {getGreeting()}</Text>
-            <View style={styles.timeRow}>
-              <Clock size={14} color={Colors.textTertiary} />
-              <Text style={styles.timeText}>
-                {new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
-              </Text>
+          <View style={styles.headerTop}>
+            <View style={styles.headerLeft}>
+              <Text style={styles.greeting}>Hey {user?.name?.split(' ')[0] || 'there'}, {getDayName()} {getGreeting()}</Text>
+              <View style={styles.timeRow}>
+                <Clock size={14} color={Colors.textTertiary} />
+                <Text style={styles.timeText}>
+                  {new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                </Text>
+              </View>
             </View>
+            {(user?.streak || 0) > 0 && (
+              <View style={styles.streakBadge}>
+                <Text style={styles.streakEmoji}>🔥</Text>
+                <Text style={styles.streakText}>{user?.streak}</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -114,7 +144,7 @@ export default function HomeScreen() {
           <Text style={styles.statsTitle}>Your Gut This Week</Text>
           <View style={styles.statsGrid}>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{weeklyStats.avgScore || 78}</Text>
+              <Text style={styles.statNumber}>{avgScore || '-'}</Text>
               <View style={styles.statChange}>
                 <TrendingUp size={12} color={Colors.success} />
                 <Text style={styles.statChangeText}>{weeklyStats.scoreChange}%</Text>
@@ -123,16 +153,35 @@ export default function HomeScreen() {
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{weeklyStats.mealsScanned || meals.length}</Text>
+              <Text style={styles.statNumber}>{meals.length}</Text>
               <Text style={styles.statLabel}>Meals</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{weeklyStats.triggersIdentified}</Text>
+              <Text style={styles.statNumber}>{triggers.length}</Text>
               <Text style={styles.statLabel}>Triggers</Text>
             </View>
           </View>
         </View>
+
+        {triggers.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Potential Triggers Detected</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
+              {triggers.map(trigger => (
+                <View key={trigger.id} style={styles.triggerCard}>
+                  <View style={styles.triggerIcon}>
+                    <AlertTriangle size={20} color={Colors.warning} />
+                  </View>
+                  <View>
+                    <Text style={styles.triggerName}>{trigger.name}</Text>
+                    <Text style={styles.triggerConfidence}>{trigger.confidence}% confidence</Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Today&apos;s Meals</Text>
@@ -165,6 +214,10 @@ export default function HomeScreen() {
         activeOpacity={0.9}
       >
         <Camera size={24} color={Colors.white} />
+        {/* Badge hint if no meals today */}
+        {todaysMeals.length === 0 && (
+          <View style={styles.fabBadge} />
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -190,6 +243,31 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     color: Colors.text,
     marginBottom: 4,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  headerLeft: {
+    flex: 1,
+  },
+  streakBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.warning,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 4,
+  },
+  streakEmoji: {
+    fontSize: 16,
+  },
+  streakText: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: Colors.white,
   },
   timeRow: {
     flexDirection: 'row',
@@ -345,5 +423,42 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 5,
+  },
+  fabBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: Colors.warning,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+  },
+  triggerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.warningLight,
+    padding: 12,
+    borderRadius: 12,
+    gap: 12,
+    minWidth: 200,
+  },
+  triggerIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  triggerName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  triggerConfidence: {
+    fontSize: 12,
+    color: Colors.textSecondary,
   },
 });

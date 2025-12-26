@@ -1,14 +1,90 @@
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { ChevronDown, Lightbulb } from 'lucide-react-native';
 import Svg, { Path, Circle, Line, Text as SvgText } from 'react-native-svg';
 import Colors from '@/constants/colors';
-import { mockTriggers, mockWeeklyScores } from '@/mocks/data';
+import { useApp } from '@/contexts/AppContext';
+import { analyzeTriggers } from '@/lib/trigger-engine';
+import { useMemo } from 'react';
 
 export default function InsightsScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { meals, symptoms, user } = useApp();
 
-  const avgScore = Math.round(mockWeeklyScores.reduce((sum, d) => sum + d.score, 0) / mockWeeklyScores.length);
+  // Calculate real triggers
+  const triggers = useMemo(() => analyzeTriggers(meals, symptoms), [meals, symptoms]);
+
+  // Calculate weekly scores from real meals
+  const weeklyScores = useMemo(() => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const today = new Date();
+    const scores = [];
+
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dayMeals = meals.filter(m => {
+        const mealDate = new Date(m.timestamp);
+        return mealDate.toDateString() === date.toDateString();
+      });
+      const avgScore = dayMeals.length > 0
+        ? Math.round(dayMeals.reduce((sum, m) => sum + m.score, 0) / dayMeals.length)
+        : 0;
+      scores.push({ day: days[date.getDay()], score: avgScore || 70 });
+    }
+    return scores;
+  }, [meals]);
+
+  // Calculate top foods
+  const topFoods = useMemo(() => {
+    const foodCounts: Record<string, { count: number; totalScore: number; name: string }> = {};
+    meals.forEach(meal => {
+      meal.foods.forEach(food => {
+        if (!foodCounts[food.name]) {
+          foodCounts[food.name] = { count: 0, totalScore: 0, name: food.name };
+        }
+        foodCounts[food.name].count++;
+        foodCounts[food.name].totalScore += meal.score;
+      });
+    });
+    return Object.values(foodCounts)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5)
+      .map(f => ({ ...f, avgScore: Math.round(f.totalScore / f.count) }));
+  }, [meals]);
+
+  // Calculate fiber diversity (unique plant foods)
+  const fiberDiversity = useMemo(() => {
+    const uniqueFoods = new Set<string>();
+    meals.forEach(meal => {
+      meal.foods.forEach(food => uniqueFoods.add(food.name.toLowerCase()));
+    });
+    return uniqueFoods.size;
+  }, [meals]);
+
+  // Calculate symptom frequency
+  const symptomFrequency = useMemo(() => {
+    const freq: Record<string, number> = {};
+    symptoms.forEach(s => {
+      s.types.forEach(type => {
+        freq[type] = (freq[type] || 0) + 1;
+      });
+    });
+    return Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  }, [symptoms]);
+
+  const avgScore = weeklyScores.length > 0
+    ? Math.round(weeklyScores.reduce((sum, d) => sum + d.score, 0) / weeklyScores.length)
+    : 0;
+
+  // Chart dimensions
+  const chartWidth = 300;
+  const chartHeight = 120;
+  const padding = 30;
+  const graphWidth = chartWidth - padding * 2;
+  const graphHeight = chartHeight - 40;
 
   const getTriggerColor = (status: string) => {
     if (status === 'avoid') return Colors.danger;
@@ -16,15 +92,10 @@ export default function InsightsScreen() {
     return Colors.warning;
   };
 
-  const chartWidth = 300;
-  const chartHeight = 120;
-  const padding = 30;
-  const graphWidth = chartWidth - padding * 2;
-  const graphHeight = chartHeight - 40;
-
   const getPathData = () => {
-    const points = mockWeeklyScores.map((d, i) => {
-      const x = padding + (i / (mockWeeklyScores.length - 1)) * graphWidth;
+    if (weeklyScores.length < 2) return '';
+    const points = weeklyScores.map((d, i) => {
+      const x = padding + (i / (weeklyScores.length - 1)) * graphWidth;
       const y = chartHeight - 20 - ((d.score - 60) / 40) * graphHeight;
       return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
     });
@@ -33,6 +104,7 @@ export default function InsightsScreen() {
 
   const getAreaPath = () => {
     const linePath = getPathData();
+    if (!linePath) return '';
     const lastX = padding + graphWidth;
     const firstX = padding;
     const bottomY = chartHeight - 20;
@@ -41,7 +113,7 @@ export default function InsightsScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -54,32 +126,37 @@ export default function InsightsScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Top Triggers Card */}
         <View style={styles.triggersCard}>
           <Text style={styles.triggersTitle}>Your Top Triggers</Text>
-          <View style={styles.triggersList}>
-            {mockTriggers.map((trigger) => (
-              <View key={trigger.id} style={styles.triggerItem}>
-                <View style={styles.triggerInfo}>
-                  <Text style={styles.triggerName}>{trigger.name}</Text>
-                  <Text style={[styles.triggerStatus, { color: getTriggerColor(trigger.status) }]}>
-                    {trigger.confidence}% confidence · {trigger.status.toUpperCase()}
-                  </Text>
+          {triggers.length > 0 ? (
+            <View style={styles.triggersList}>
+              {triggers.slice(0, 4).map((trigger) => (
+                <View key={trigger.id} style={styles.triggerItem}>
+                  <View style={styles.triggerInfo}>
+                    <Text style={styles.triggerName}>{trigger.name}</Text>
+                    <Text style={[styles.triggerStatus, { color: getTriggerColor(trigger.status) }]}>
+                      {trigger.confidence}% confidence · {trigger.status.toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={styles.triggerBar}>
+                    <View
+                      style={[
+                        styles.triggerBarFill,
+                        {
+                          width: `${trigger.confidence}%`,
+                          backgroundColor: getTriggerColor(trigger.status)
+                        }
+                      ]}
+                    />
+                  </View>
                 </View>
-                <View style={styles.triggerBar}>
-                  <View 
-                    style={[
-                      styles.triggerBarFill, 
-                      { 
-                        width: `${trigger.confidence}%`,
-                        backgroundColor: getTriggerColor(trigger.status)
-                      }
-                    ]} 
-                  />
-                </View>
-              </View>
-            ))}
-          </View>
-          <Text style={styles.triggersNote}>Based on 47 logs & symptom correlations</Text>
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.noTriggersText}>Log more meals and symptoms to detect triggers</Text>
+          )}
+          <Text style={styles.triggersNote}>Based on {meals.length} meals & {symptoms.length} symptom logs</Text>
         </View>
 
         <View style={styles.card}>
@@ -96,8 +173,8 @@ export default function InsightsScreen() {
                 strokeWidth={2}
                 fill="none"
               />
-              {mockWeeklyScores.map((d, i) => {
-                const x = padding + (i / (mockWeeklyScores.length - 1)) * graphWidth;
+              {weeklyScores.map((d, i) => {
+                const x = padding + (i / Math.max(weeklyScores.length - 1, 1)) * graphWidth;
                 const y = chartHeight - 20 - ((d.score - 60) / 40) * graphHeight;
                 return (
                   <Circle
@@ -118,10 +195,10 @@ export default function InsightsScreen() {
                 strokeWidth={1}
                 strokeDasharray="4,4"
               />
-              {mockWeeklyScores.map((d, i) => (
+              {weeklyScores.map((d, i) => (
                 <SvgText
                   key={i}
-                  x={padding + (i / (mockWeeklyScores.length - 1)) * graphWidth}
+                  x={padding + (i / Math.max(weeklyScores.length - 1, 1)) * graphWidth}
                   y={chartHeight - 5}
                   fontSize={10}
                   fill={Colors.textTertiary}
@@ -155,7 +232,7 @@ export default function InsightsScreen() {
                   stroke={Colors.primary}
                   strokeWidth={10}
                   fill="none"
-                  strokeDasharray={`${(18/28) * 314} 314`}
+                  strokeDasharray={`${(18 / 28) * 314} 314`}
                   strokeLinecap="round"
                   transform="rotate(-90 60 60)"
                 />
@@ -184,12 +261,12 @@ export default function InsightsScreen() {
                   {[0, 1, 2, 3, 4, 5, 6].map(dayIdx => {
                     const intensity = Math.random();
                     const bgColor = intensity < 0.3 ? Colors.background :
-                                   intensity < 0.6 ? Colors.warningLight :
-                                   Colors.dangerLight;
+                      intensity < 0.6 ? Colors.warningLight :
+                        Colors.dangerLight;
                     return (
-                      <View 
-                        key={dayIdx} 
-                        style={[styles.heatmapCell, { backgroundColor: bgColor }]} 
+                      <View
+                        key={dayIdx}
+                        style={[styles.heatmapCell, { backgroundColor: bgColor }]}
                       />
                     );
                   })}
@@ -291,6 +368,12 @@ const styles = StyleSheet.create({
   triggerBarFill: {
     height: '100%',
     borderRadius: 2,
+  },
+  noTriggersText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.7)',
+    textAlign: 'center',
+    paddingVertical: 16,
   },
   triggersNote: {
     fontSize: 11,

@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, Platform, Alert } from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, Check } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
@@ -13,7 +13,9 @@ export default function SymptomLoggerScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { addSymptom, meals } = useApp();
-  
+  const params = useLocalSearchParams();
+  const paramMealId = params.mealId as string;
+
   const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
   const [intensity, setIntensity] = useState(5);
   const [mealAssociation, setMealAssociation] = useState<'just_after' | '2_3_hours' | 'other'>('just_after');
@@ -23,7 +25,7 @@ export default function SymptomLoggerScreen() {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    
+
     if (selectedSymptoms.includes(symptom)) {
       setSelectedSymptoms(selectedSymptoms.filter(s => s !== symptom));
     } else {
@@ -34,23 +36,32 @@ export default function SymptomLoggerScreen() {
   const handleSave = async () => {
     if (selectedSymptoms.length === 0) return;
 
-    const newSymptom: Symptom = {
-      id: Date.now().toString(),
-      timestamp: new Date(),
-      types: selectedSymptoms,
-      intensity,
-      mealAssociation,
-      associatedMealId: meals[0]?.id,
-      notes,
-    };
+    try {
+      const newSymptom: Symptom = {
+        id: Date.now().toString(),
+        timestamp: new Date(),
+        types: selectedSymptoms,
+        intensity,
+        mealAssociation,
+        associatedMealId: paramMealId || meals[0]?.id,
+        notes,
+      };
 
-    await addSymptom(newSymptom);
-    
-    if (Platform.OS !== 'web') {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await addSymptom(newSymptom);
+
+      if (Platform.OS !== 'web') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+
+      Alert.alert(
+        "Symptom Logged",
+        "We've added this to your health log. We'll analyze it for patterns.",
+        [{ text: "OK", onPress: () => router.back() }]
+      );
+    } catch (error) {
+      console.error('Error saving symptom:', error);
+      Alert.alert("Error", "Failed to save symptom. Please try again.");
     }
-    
-    router.back();
   };
 
   const getIntensityColor = () => {

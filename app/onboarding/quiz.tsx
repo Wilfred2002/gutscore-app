@@ -45,7 +45,7 @@ export default function QuizScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { onboarding, updateOnboarding } = useApp();
-  
+
   const [currentStep, setCurrentStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>(
     onboarding.quizAnswers || {}
@@ -79,9 +79,9 @@ export default function QuizScreen() {
     if (currentStep < totalSteps - 1) {
       setCurrentStep(currentStep + 1);
     } else {
-      await updateOnboarding({ 
+      await updateOnboarding({
         quizAnswers: answers as typeof onboarding.quizAnswers,
-        currentStep: 2 
+        currentStep: 2
       });
       router.push('/onboarding/permissions');
     }
@@ -117,14 +117,14 @@ export default function QuizScreen() {
         <Text style={styles.progressText}>{currentStep + 1} of {totalSteps}</Text>
       </View>
 
-      <ScrollView 
+      <ScrollView
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.questionCard}>
           <Text style={styles.question}>{step.question}</Text>
-          
+
           <View style={styles.optionsContainer}>
             {step.options.map((option) => (
               <TouchableOpacity

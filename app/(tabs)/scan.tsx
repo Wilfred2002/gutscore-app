@@ -1,20 +1,35 @@
-import { useState, useRef } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Platform, Animated } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useState, useRef, useEffect } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, Platform, Animated, Alert } from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
-import { X, Zap, Image as ImageIcon, Settings } from 'lucide-react-native';
+import { X, Zap, Image as ImageIcon, Settings, Repeat } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
+import { analyzeFoodImage } from '@/lib/openai';
 
 export default function ScanScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [flashEnabled, setFlashEnabled] = useState(false);
+  const params = useLocalSearchParams();
+  const isOnboarding = params.onboarding === 'true';
+  const [permission, requestPermission] = useCameraPermissions();
+  const [facing, setFacing] = useState<'back' | 'front'>('back');
+  const [flash, setFlash] = useState<'off' | 'on'>('off');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const cameraRef = useRef<CameraView>(null);
+
   const flashAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Request permissions on mount
+  useEffect(() => {
+    if (permission && !permission.granted) {
+      requestPermission();
+    }
+  }, [permission, requestPermission]);
 
   const animateCapture = () => {
     Animated.sequence([
@@ -48,20 +63,67 @@ export default function ScanScreen() {
     ).start();
   };
 
+  const processImage = async (base64: string | undefined | null, uri: string) => {
+    if (!base64) {
+      Alert.alert('Error', 'Could not process image data');
+      setIsAnalyzing(false);
+      pulseAnim.setValue(1);
+      return;
+    }
+
+    try {
+      const result = await analyzeFoodImage(base64);
+
+      router.push({
+        pathname: '/scan-results',
+        params: {
+          imageUri: uri,
+          foods: JSON.stringify(result.foods),
+          gutScores: JSON.stringify(result.gutScores),
+          overallScore: result.overallScore.toString(),
+          analysis: JSON.stringify(result.analysis),
+          triggers: JSON.stringify(result.triggers),
+          swaps: JSON.stringify(result.swaps),
+          onboarding: isOnboarding ? 'true' : undefined,
+        }
+      });
+    } catch (error) {
+      console.error(error);
+      Alert.alert('Analysis Failed', 'Could not analyze the image. Please try again.');
+    } finally {
+      setIsAnalyzing(false);
+      pulseAnim.setValue(1);
+    }
+  };
+
   const handleCapture = async () => {
+    if (!cameraRef.current) return;
+    if (isAnalyzing) return;
+
     if (Platform.OS !== 'web') {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    
+
     animateCapture();
     setIsAnalyzing(true);
     startPulse();
 
-    setTimeout(() => {
+    try {
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.5,
+        base64: true,
+        skipProcessing: true,
+      });
+
+      if (photo) {
+        await processImage(photo.base64, photo.uri);
+      }
+    } catch (error) {
+      console.error('Camera capture failed:', error);
       setIsAnalyzing(false);
       pulseAnim.setValue(1);
-      router.push('/scan-results');
-    }, 2000);
+      Alert.alert('Error', 'Failed to take photo');
+    }
   };
 
   const handlePickImage = async () => {
@@ -69,54 +131,74 @@ export default function ScanScreen() {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.8,
+      quality: 0.5,
+      base64: true,
     });
 
-    if (!result.canceled) {
+    if (!result.canceled && result.assets[0]) {
       setIsAnalyzing(true);
       startPulse();
-      
-      setTimeout(() => {
-        setIsAnalyzing(false);
-        pulseAnim.setValue(1);
-        router.push('/scan-results');
-      }, 2000);
+      await processImage(result.assets[0].base64, result.assets[0].uri);
     }
   };
 
   const toggleFlash = () => {
-    setFlashEnabled(!flashEnabled);
+    setFlash(current => (current === 'off' ? 'on' : 'off'));
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
   };
 
+  const toggleCameraFacing = () => {
+    setFacing(current => (current === 'back' ? 'front' : 'back'));
+  };
+
+  if (!permission) {
+    // Camera permissions are still loading.
+    return <View style={styles.container} />;
+  }
+
+  if (!permission.granted) {
+    // Camera permissions are not granted yet.
+    return (
+      <View style={[styles.container, styles.permissionContainer]}>
+        <Text style={styles.permissionText}>We need your permission to show the camera</Text>
+        <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
+          <Text style={styles.permissionButtonText}>Grant Permission</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+          <Text style={styles.closeButtonText}>Close</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      <View style={styles.cameraPlaceholder}>
-        <LinearGradient
-          colors={['#1a1a1a', '#2d2d2d', '#1a1a1a']}
-          style={StyleSheet.absoluteFill}
-        />
-        
+      <CameraView
+        style={styles.camera}
+        facing={facing}
+        flash={flash}
+        ref={cameraRef}
+      >
         <LinearGradient
           colors={['rgba(0,0,0,0.6)', 'transparent']}
           style={[styles.topOverlay, { paddingTop: insets.top }]}
         >
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.topButton}
             onPress={() => router.back()}
           >
             <X size={24} color={Colors.white} />
           </TouchableOpacity>
-          
-          <Text style={styles.headerTitle}>GutScore</Text>
-          
-          <TouchableOpacity 
-            style={[styles.topButton, flashEnabled && styles.flashEnabled]}
+
+          <Text style={styles.headerTitle}>{isOnboarding ? "Scan First Meal" : "GutScore"}</Text>
+
+          <TouchableOpacity
+            style={[styles.topButton, flash === 'on' && styles.flashEnabled]}
             onPress={toggleFlash}
           >
-            <Zap size={24} color={flashEnabled ? Colors.warning : Colors.white} />
+            <Zap size={24} color={flash === 'on' ? Colors.warning : Colors.white} />
           </TouchableOpacity>
         </LinearGradient>
 
@@ -128,7 +210,6 @@ export default function ScanScreen() {
             <View style={[styles.corner, styles.cornerBR]} />
           </View>
           <Text style={styles.framePrompt}>Position your meal in the frame</Text>
-          <Text style={styles.frameSubtext}>Make sure lighting is good</Text>
         </View>
 
         <LinearGradient
@@ -136,7 +217,7 @@ export default function ScanScreen() {
           style={[styles.bottomOverlay, { paddingBottom: insets.bottom + 20 }]}
         >
           <View style={styles.bottomControls}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.sideButton}
               onPress={handlePickImage}
             >
@@ -154,8 +235,11 @@ export default function ScanScreen() {
               </TouchableOpacity>
             </Animated.View>
 
-            <TouchableOpacity style={styles.sideButton}>
-              <Settings size={24} color={Colors.white} />
+            <TouchableOpacity
+              style={styles.sideButton}
+              onPress={toggleCameraFacing}
+            >
+              <Repeat size={24} color={Colors.white} />
             </TouchableOpacity>
           </View>
         </LinearGradient>
@@ -169,14 +253,14 @@ export default function ScanScreen() {
           </View>
         )}
 
-        <Animated.View 
+        <Animated.View
           style={[
             styles.flashOverlay,
             { opacity: flashAnim }
-          ]} 
+          ]}
           pointerEvents="none"
         />
-      </View>
+      </CameraView>
     </View>
   );
 }
@@ -186,9 +270,38 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
-  cameraPlaceholder: {
+  permissionContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  permissionText: {
+    color: Colors.white,
+    fontSize: 18,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  permissionButton: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  permissionButtonText: {
+    color: Colors.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  closeButton: {
+    padding: 12,
+  },
+  closeButtonText: {
+    color: Colors.textTertiary,
+    fontSize: 16,
+  },
+  camera: {
     flex: 1,
-    position: 'relative',
   },
   topOverlay: {
     position: 'absolute',
@@ -206,17 +319,20 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   flashEnabled: {
-    backgroundColor: 'rgba(244, 162, 97, 0.3)',
+    backgroundColor: 'rgba(244, 162, 97, 0.6)',
   },
   headerTitle: {
     fontSize: 16,
     fontWeight: '600' as const,
     color: Colors.white,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   frameContainer: {
     flex: 1,
@@ -267,12 +383,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 24,
     textAlign: 'center',
-  },
-  frameSubtext: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 12,
-    marginTop: 4,
-    textAlign: 'center',
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   bottomOverlay: {
     position: 'absolute',
@@ -292,7 +405,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'center',
     alignItems: 'center',
   },

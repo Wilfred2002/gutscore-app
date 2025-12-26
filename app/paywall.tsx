@@ -1,16 +1,19 @@
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, Check, Crown, Sparkles, Zap } from 'lucide-react-native';
+import { X, Check, Crown, Sparkles, Zap, RefreshCw } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
 import { useState } from 'react';
+import { useApp } from '@/contexts/AppContext';
 
 export default function PaywallScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { user, updateUser } = useApp();
   const [selectedPlan, setSelectedPlan] = useState<'pro' | 'premium'>('pro');
   const [isAnnual, setIsAnnual] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const plans = {
     free: {
@@ -33,8 +36,37 @@ export default function PaywallScreen() {
     },
   };
 
-  const handleSubscribe = () => {
-    router.back();
+  const handleSubscribe = async () => {
+    setIsLoading(true);
+    try {
+      // TODO: In production, integrate with Stripe/RevenueCat here
+      // For now, simulate subscription by updating user state
+      await updateUser({ isPro: true });
+
+      Alert.alert(
+        "🎉 Welcome to Pro!",
+        `You've unlocked ${selectedPlan === 'pro' ? 'Pro' : 'Premium'} features. Enjoy unlimited scanning!`,
+        [{ text: "Let's Go!", onPress: () => router.back() }]
+      );
+    } catch (error) {
+      Alert.alert("Error", "Failed to process subscription. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRestorePurchases = async () => {
+    setIsLoading(true);
+    try {
+      // TODO: In production, call RevenueCat restorePurchases
+      // Simulate checking for existing subscription
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      Alert.alert("No Purchases Found", "We couldn't find any previous subscriptions for this account.");
+    } catch (error) {
+      Alert.alert("Error", "Failed to restore purchases.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -43,13 +75,13 @@ export default function PaywallScreen() {
         colors={[Colors.primary, Colors.primaryLight]}
         style={[styles.headerGradient, { paddingTop: insets.top }]}
       >
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.closeButton}
           onPress={() => router.back()}
         >
           <X size={24} color={Colors.white} />
         </TouchableOpacity>
-        
+
         <View style={styles.headerContent}>
           <Crown size={40} color={Colors.white} />
           <Text style={styles.headerTitle}>Unlock Pro Features</Text>
@@ -57,13 +89,13 @@ export default function PaywallScreen() {
         </View>
       </LinearGradient>
 
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 120 }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.plansContainer}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.planCard, styles.freePlanCard]}
             activeOpacity={0.7}
           >
@@ -80,9 +112,9 @@ export default function PaywallScreen() {
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[
-              styles.planCard, 
+              styles.planCard,
               styles.proPlanCard,
               selectedPlan === 'pro' && styles.selectedPlan
             ]}
@@ -111,7 +143,7 @@ export default function PaywallScreen() {
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[
               styles.planCard,
               selectedPlan === 'premium' && styles.selectedPlan
@@ -139,7 +171,7 @@ export default function PaywallScreen() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.annualToggle}
           onPress={() => setIsAnnual(!isAnnual)}
           activeOpacity={0.7}
@@ -155,22 +187,39 @@ export default function PaywallScreen() {
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 20 }]}>
         <TouchableOpacity
-          style={styles.subscribeButton}
+          style={[styles.subscribeButton, isLoading && styles.buttonDisabled]}
           onPress={handleSubscribe}
           activeOpacity={0.8}
+          disabled={isLoading}
         >
-          <Text style={styles.subscribeButtonText}>
-            Continue with {selectedPlan === 'pro' ? 'Pro' : 'Premium'}
-          </Text>
+          {isLoading ? (
+            <ActivityIndicator color={Colors.white} />
+          ) : (
+            <Text style={styles.subscribeButtonText}>
+              Continue with {selectedPlan === 'pro' ? 'Pro' : 'Premium'}
+            </Text>
+          )}
         </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={styles.notInterestedButton}
-          onPress={() => router.back()}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.notInterestedText}>Not interested</Text>
-        </TouchableOpacity>
+
+        <View style={styles.footerButtons}>
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={() => router.back()}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.notInterestedText}>Not interested</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={handleRestorePurchases}
+            activeOpacity={0.7}
+            disabled={isLoading}
+          >
+            <RefreshCw size={14} color={Colors.textSecondary} />
+            <Text style={styles.notInterestedText}>Restore</Text>
+          </TouchableOpacity>
+        </View>
 
         <Text style={styles.footerNote}>
           7-day free trial included. Cancel anytime.
@@ -381,10 +430,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
   subscribeButtonText: {
     fontSize: 17,
     fontWeight: '600' as const,
     color: Colors.white,
+  },
+  footerButtons: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 20,
+    marginTop: 8,
+  },
+  secondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 12,
   },
   notInterestedButton: {
     height: 48,
@@ -399,5 +463,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.textTertiary,
     textAlign: 'center',
+    marginTop: 8,
   },
 });

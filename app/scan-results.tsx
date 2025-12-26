@@ -1,79 +1,108 @@
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity } from 'react-native';
-import { useRouter } from 'expo-router';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, Edit2, RefreshCw, Check, AlertTriangle } from 'lucide-react-native';
+import { X, Edit2, RefreshCw, Check, AlertTriangle, Zap } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { mockFoods, mockSwaps } from '@/mocks/data';
 import { Meal } from '@/types';
+import { useState } from 'react';
 
 export default function ScanResultsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { addMeal } = useApp();
+  const params = useLocalSearchParams();
 
-  const score = 92;
-  const fodmapRisk = 18;
-  const fermentation = 25;
-  const fiberDiversity = 8;
-  const probioticBoost = 2;
+  // Parse params or fallback to mock data (for testing directly)
+  const isMock = !params.overallScore;
+  const score = isMock ? 92 : Number(params.overallScore);
 
-  const handleAddToMeal = async () => {
-    const newMeal: Meal = {
-      id: Date.now().toString(),
-      timestamp: new Date(),
-      imageUri: undefined, // TODO: Add camera integration for meal photos
-      foods: mockFoods,
-      score,
-      fodmapRisk,
-      fermentation,
-      fiberDiversity,
-      probioticBoost,
-      status: 'safe',
-      analysis: [
-        'Low-FODMAP vegetables',
-        'Easily digestible protein',
-      ],
-      triggers: [
-        'You may have mild sensitivity to butter (lactose). Consider lactose-free alternative.',
-      ],
-      swaps: mockSwaps,
-    };
+  const foods = isMock ? mockFoods : JSON.parse(params.foods as string);
+  const gutScores = isMock ? {
+    fodmap: 18,
+    fermentation: 25,
+    fiber_diversity: 8,
+    probiotic: 2
+  } : JSON.parse(params.gutScores as string);
 
-    await addMeal(newMeal);
-    router.back();
-    router.push('/(tabs)');
+  const analysis = isMock ? [
+    'Low-FODMAP vegetables',
+    'Easily digestible protein'
+  ] : JSON.parse(params.analysis as string);
+
+  const triggers = isMock ? [
+    'You may have mild sensitivity to butter (lactose).'
+  ] : JSON.parse(params.triggers as string);
+
+  const swaps = isMock ? mockSwaps : JSON.parse(params.swaps as string);
+  const imageUri = params.imageUri as string;
+
+  const isOnboarding = params.onboarding === 'true';
+
+  // Helper to determine status based on score
+  const getStatusInfo = (score: number) => {
+    if (score >= 80) return { text: 'Safe to Eat', color: Colors.success, title: 'Why is this meal safe?' };
+    if (score >= 50) return { text: 'Proceed with Caution', color: Colors.warning, title: 'Meal Analysis' };
+    return { text: 'Limit or Avoid', color: Colors.error, title: 'Why limit this?' };
   };
 
+  const statusInfo = getStatusInfo(score);
+
+  const { fodmap: fodmapRisk, fermentation, fiber_diversity: fiberDiversity, probiotic: probioticBoost } = gutScores;
+
   const getScoreColor = (value: number, max: number) => {
-    const percent = (value / max) * 100;
-    if (percent <= 30) return Colors.success;
-    if (percent <= 60) return Colors.warning;
-    return Colors.danger;
+    const percentage = (value / max) * 100;
+    if (percentage >= 80) return Colors.success;
+    if (percentage >= 50) return Colors.warning;
+    return Colors.error;
+  };
+
+  const handleAddToLog = async () => {
+    try {
+      // Create new meal object
+      const newMeal: Meal = {
+        id: Date.now().toString(), // temporary ID
+        foods,
+        timestamp: new Date(),
+        score,
+        imageUri,
+        gutScores,
+        notes: '',
+      };
+
+      await addMeal(newMeal);
+
+      if (isOnboarding) {
+        router.replace('/onboarding/checklist');
+      } else {
+        router.replace('/(tabs)');
+      }
+    } catch (error) {
+      console.error('Error adding meal:', error);
+    }
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <View style={styles.header}>
-        <View style={styles.dragHandle} />
-        <View style={styles.headerRow}>
-          <Text style={styles.headerTitle}>Meal Analysis</Text>
-          <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
-            <X size={24} color={Colors.text} />
-          </TouchableOpacity>
-        </View>
+    <View style={styles.container}>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.closeButton}>
+          <X size={24} color={Colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Scan Results</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Foods Detected</Text>
-          <View style={styles.foodsList}>
-            {mockFoods.map((food) => (
-              <View key={food.id} style={styles.foodItem}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {imageUri && (
+          <Image source={{ uri: imageUri }} style={styles.mealImage} />
+        )}
+
+        <View style={styles.detectedCard}>
+          <Text style={styles.sectionTitle}>Detected Foods</Text>
+          <View style={styles.foodList}>
+            {foods.map((food: any, index: number) => (
+              <View key={index} style={styles.foodItem}>
                 <Text style={styles.foodEmoji}>{food.emoji}</Text>
                 <Text style={styles.foodName}>{food.name}</Text>
                 <Text style={styles.foodConfidence}>{food.confidence}%</Text>
@@ -88,31 +117,35 @@ export default function ScanResultsScreen() {
         <View style={styles.scoreCard}>
           <Text style={styles.scoreLabel}>Your Gut Score</Text>
           <Text style={styles.scoreValue}>{score}/100</Text>
-          <View style={styles.statusBadge}>
-            <Check size={14} color={Colors.white} />
-            <Text style={styles.statusText}>Safe to Eat</Text>
+          <View style={[styles.statusBadge, { backgroundColor: statusInfo.color + '20' }]}>
+            {score >= 80 ? (
+              <Check size={14} color={statusInfo.color} />
+            ) : (
+              <AlertTriangle size={14} color={statusInfo.color} />
+            )}
+            <Text style={[styles.statusText, { color: statusInfo.color }]}>{statusInfo.text}</Text>
           </View>
 
           <View style={styles.scoreGrid}>
             <View style={styles.scoreGridItem}>
               <Text style={styles.scoreGridLabel}>FODMAP Risk</Text>
-              <Text style={[styles.scoreGridValue, { color: getScoreColor(fodmapRisk, 100) }]}>
+              <Text style={[styles.scoreGridValue, { color: getScoreColor(100 - fodmapRisk, 100) }]}>
                 {fodmapRisk}/100
               </Text>
-              <Text style={styles.scoreGridStatus}>Low</Text>
+              <Text style={styles.scoreGridStatus}>{fodmapRisk < 30 ? 'Low' : fodmapRisk < 70 ? 'Med' : 'High'}</Text>
               <View style={styles.scoreBar}>
-                <View style={[styles.scoreBarFill, { width: `${fodmapRisk}%`, backgroundColor: getScoreColor(fodmapRisk, 100) }]} />
+                <View style={[styles.scoreBarFill, { width: `${fodmapRisk}%`, backgroundColor: getScoreColor(100 - fodmapRisk, 100) }]} />
               </View>
             </View>
 
             <View style={styles.scoreGridItem}>
               <Text style={styles.scoreGridLabel}>Fermentation</Text>
-              <Text style={[styles.scoreGridValue, { color: getScoreColor(fermentation, 100) }]}>
+              <Text style={[styles.scoreGridValue, { color: getScoreColor(100 - fermentation, 100) }]}>
                 {fermentation}/100
               </Text>
-              <Text style={styles.scoreGridStatus}>Low</Text>
+              <Text style={styles.scoreGridStatus}>{fermentation < 30 ? 'Low' : 'High'}</Text>
               <View style={styles.scoreBar}>
-                <View style={[styles.scoreBarFill, { width: `${fermentation}%`, backgroundColor: getScoreColor(fermentation, 100) }]} />
+                <View style={[styles.scoreBarFill, { width: `${fermentation}%`, backgroundColor: getScoreColor(100 - fermentation, 100) }]} />
               </View>
             </View>
 
@@ -141,35 +174,39 @@ export default function ScanResultsScreen() {
         </View>
 
         <View style={styles.analysisSection}>
-          <Text style={styles.analysisTitleGreen}>Why is this meal safe?</Text>
+          <Text style={[styles.analysisTitleGreen, { color: statusInfo.color }]}>{statusInfo.title}</Text>
           <View style={styles.analysisList}>
-            <View style={styles.analysisItem}>
-              <Check size={16} color={Colors.success} />
-              <Text style={styles.analysisText}>Low-FODMAP vegetables</Text>
-            </View>
-            <View style={styles.analysisItem}>
-              <Check size={16} color={Colors.success} />
-              <Text style={styles.analysisText}>Easily digestible protein</Text>
-            </View>
+            {analysis.map((item: string, index: number) => (
+              <View key={index} style={styles.analysisItem}>
+                {score >= 80 ? (
+                  <Check size={16} color={Colors.success} />
+                ) : (
+                  <Zap size={16} color={Colors.textSecondary} />
+                )}
+                <Text style={styles.analysisText}>{item}</Text>
+              </View>
+            ))}
           </View>
         </View>
 
         <View style={[styles.analysisSection, styles.triggerSection]}>
           <Text style={styles.analysisTitleOrange}>Potential Triggers</Text>
-          <View style={styles.triggerCard}>
-            <AlertTriangle size={16} color={Colors.warning} />
-            <Text style={styles.triggerText}>
-              You may have mild sensitivity to butter (lactose). Consider lactose-free alternative.
-            </Text>
-          </View>
+          {triggers.length > 0 ? triggers.map((trigger: string, index: number) => (
+            <View key={index} style={styles.triggerCard}>
+              <AlertTriangle size={16} color={Colors.warning} />
+              <Text style={styles.triggerText}>{trigger}</Text>
+            </View>
+          )) : (
+            <Text style={styles.triggerText}>No triggers detected.</Text>
+          )}
         </View>
 
         <View style={[styles.analysisSection, styles.swapsSection]}>
           <Text style={styles.analysisTitleGreen}>Better Swaps</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.swapsList}>
-              {mockSwaps.map((swap) => (
-                <TouchableOpacity key={swap.id} style={styles.swapCard}>
+              {swaps.map((swap: any, index: number) => (
+                <TouchableOpacity key={swap.id || index} style={styles.swapCard}>
                   <Text style={styles.swapEmoji}>{swap.emoji}</Text>
                   <Text style={styles.swapName}>{swap.name}</Text>
                   <Text style={styles.swapScore}>+{swap.scoreIncrease} pts</Text>
@@ -180,21 +217,13 @@ export default function ScanResultsScreen() {
         </View>
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 20 }]}>
-        <TouchableOpacity
-          style={styles.primaryButton}
-          onPress={handleAddToMeal}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.primaryButtonText}>Add to Meal Log</Text>
+      <View style={[styles.footer, { paddingBottom: insets.bottom + 10 }]}>
+        <TouchableOpacity style={styles.primaryButton} onPress={handleAddToLog}>
+          <Text style={styles.primaryButtonText}>Add to Daily Log</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => router.back()}
-          activeOpacity={0.7}
-        >
-          <RefreshCw size={18} color={Colors.textSecondary} />
-          <Text style={styles.secondaryButtonText}>Rescan</Text>
+        <TouchableOpacity style={styles.secondaryButton} onPress={() => router.back()}>
+          <RefreshCw size={20} color={Colors.textSecondary} />
+          <Text style={styles.secondaryButtonText}>Retake Photo</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -204,156 +233,171 @@ export default function ScanResultsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.backgroundWhite,
+    backgroundColor: Colors.background,
   },
   header: {
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
-  },
-  dragHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: Colors.border,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginVertical: 12,
-  },
-  headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700' as const,
-    color: Colors.text,
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    backgroundColor: Colors.backgroundWhite,
+    zIndex: 10,
   },
   closeButton: {
-    padding: 4,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
   },
-  scrollView: {
-    flex: 1,
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text,
   },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
+  content: {
+    paddingBottom: 40,
   },
-  section: {
-    marginBottom: 20,
+  mealImage: {
+    width: '100%',
+    height: 240,
+    resizeMode: 'cover',
+  },
+  detectedCard: {
+    margin: 20,
+    marginTop: -40,
+    backgroundColor: Colors.backgroundWhite,
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
   },
   sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    color: Colors.textSecondary,
-    marginBottom: 12,
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.text,
+    marginBottom: 16,
   },
-  foodsList: {
-    gap: 8,
+  foodList: {
+    gap: 12,
   },
   foodItem: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.background,
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 12,
   },
   foodEmoji: {
-    fontSize: 20,
-    marginRight: 10,
+    fontSize: 24,
+    marginRight: 12,
   },
   foodName: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 16,
+    fontWeight: '500',
     color: Colors.text,
-    fontWeight: '500' as const,
   },
   foodConfidence: {
-    fontSize: 13,
-    color: Colors.textTertiary,
+    fontSize: 14,
+    color: Colors.primary,
+    fontWeight: '600',
     marginRight: 12,
   },
   editButton: {
     padding: 4,
   },
   scoreCard: {
-    backgroundColor: Colors.primary,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
+    margin: 20,
+    marginTop: 0,
+    backgroundColor: Colors.backgroundWhite,
+    borderRadius: 20,
+    padding: 24,
     alignItems: 'center',
   },
   scoreLabel: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-    marginBottom: 4,
+    color: Colors.textSecondary,
+    marginBottom: 8,
   },
   scoreValue: {
     fontSize: 48,
-    fontWeight: '700' as const,
-    color: Colors.white,
+    fontWeight: 'bold',
+    color: Colors.text,
     marginBottom: 8,
   },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.success,
+    backgroundColor: Colors.successLight,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
-    marginBottom: 20,
+    borderRadius: 20,
+    gap: 6,
+    marginBottom: 24,
   },
   statusText: {
     fontSize: 14,
-    fontWeight: '600' as const,
-    color: Colors.white,
+    fontWeight: '600',
+    color: Colors.success,
   },
   scoreGrid: {
-    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
+    width: '100%',
   },
   scoreGridItem: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    width: '48%',
+    backgroundColor: Colors.background,
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 12,
   },
   scoreGridLabel: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.7)',
+    color: Colors.textSecondary,
     marginBottom: 4,
   },
   scoreGridValue: {
     fontSize: 18,
-    fontWeight: '700' as const,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 2,
   },
   scoreGridStatus: {
     fontSize: 11,
-    color: 'rgba(255,255,255,0.6)',
+    color: Colors.textSecondary,
     marginBottom: 8,
   },
   scoreBar: {
     height: 4,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: Colors.border,
     borderRadius: 2,
+    overflow: 'hidden',
   },
   scoreBarFill: {
     height: '100%',
     borderRadius: 2,
   },
   analysisSection: {
-    marginBottom: 20,
+    margin: 20,
+    marginTop: 0,
+    backgroundColor: Colors.backgroundWhite,
+    borderRadius: 20,
+    padding: 20,
   },
   analysisTitleGreen: {
     fontSize: 15,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: Colors.success,
     marginBottom: 12,
   },
   analysisTitleOrange: {
     fontSize: 15,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: Colors.warning,
     marginBottom: 12,
   },
@@ -411,14 +455,14 @@ const styles = StyleSheet.create({
   swapName: {
     fontSize: 12,
     color: Colors.text,
-    fontWeight: '500' as const,
+    fontWeight: '500',
     textAlign: 'center',
     marginBottom: 4,
   },
   swapScore: {
     fontSize: 11,
     color: Colors.success,
-    fontWeight: '600' as const,
+    fontWeight: '600',
   },
   footer: {
     paddingHorizontal: 20,
@@ -437,7 +481,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     fontSize: 17,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: Colors.white,
   },
   secondaryButton: {
@@ -453,6 +497,6 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     fontSize: 15,
     color: Colors.textSecondary,
-    fontWeight: '500' as const,
+    fontWeight: '500',
   },
 });

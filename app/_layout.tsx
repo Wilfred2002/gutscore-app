@@ -15,33 +15,40 @@ function RootLayoutNav() {
     <Stack screenOptions={{ headerBackTitle: "Back" }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-      <Stack.Screen 
-        name="scan-results" 
-        options={{ 
+      <Stack.Screen
+        name="scan-results"
+        options={{
           presentation: 'modal',
           headerShown: false,
-        }} 
+        }}
       />
-      <Stack.Screen 
-        name="symptom-logger" 
-        options={{ 
+      <Stack.Screen
+        name="symptom-logger"
+        options={{
           presentation: 'modal',
           headerShown: false,
-        }} 
+        }}
       />
-      <Stack.Screen 
-        name="paywall" 
-        options={{ 
+      <Stack.Screen
+        name="paywall"
+        options={{
           presentation: 'modal',
           headerShown: false,
-        }} 
+        }}
       />
-      <Stack.Screen 
-        name="meal-detail" 
-        options={{ 
+      <Stack.Screen
+        name="meal-detail"
+        options={{
           presentation: 'modal',
           headerShown: false,
-        }} 
+        }}
+      />
+      <Stack.Screen
+        name="gut-coach"
+        options={{
+          presentation: 'modal',
+          headerShown: false,
+        }}
       />
       <Stack.Screen name="+not-found" options={{ title: 'Not Found' }} />
     </Stack>

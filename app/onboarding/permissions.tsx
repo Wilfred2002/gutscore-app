@@ -13,23 +13,26 @@ export default function PermissionsScreen() {
 
   const handleAllowCamera = async () => {
     if (Platform.OS === 'web') {
-      await updateOnboarding({ 
+      await updateOnboarding({
         permissionsGranted: { camera: true, health: false },
-        currentStep: 3 
+        currentStep: 3
       });
-      router.push('/onboarding/checklist' as never);
+      router.replace('/(tabs)/scan?onboarding=true');
       return;
     }
 
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    
+
     if (status === 'granted') {
-      await updateOnboarding({ 
+      await updateOnboarding({
         permissionsGranted: { camera: true, health: false },
-        currentStep: 3 
+        currentStep: 3
       });
+      router.replace('/(tabs)/scan?onboarding=true');
+    } else {
+      // If denied, maybe go to checklist or stay
+      router.push('/onboarding/checklist' as never);
     }
-    router.push('/onboarding/checklist' as never);
   };
 
   const handleSkip = () => {
