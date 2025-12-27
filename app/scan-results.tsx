@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Image } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, Edit2, RefreshCw, Check, AlertTriangle, Zap } from 'lucide-react-native';
@@ -44,7 +44,7 @@ export default function ScanResultsScreen() {
   const getStatusInfo = (score: number) => {
     if (score >= 80) return { text: 'Safe to Eat', color: Colors.success, title: 'Why is this meal safe?' };
     if (score >= 50) return { text: 'Proceed with Caution', color: Colors.warning, title: 'Meal Analysis' };
-    return { text: 'Limit or Avoid', color: Colors.error, title: 'Why limit this?' };
+    return { text: 'Limit or Avoid', color: Colors.danger, title: 'Why limit this?' };
   };
 
   const statusInfo = getStatusInfo(score);
@@ -55,7 +55,7 @@ export default function ScanResultsScreen() {
     const percentage = (value / max) * 100;
     if (percentage >= 80) return Colors.success;
     if (percentage >= 50) return Colors.warning;
-    return Colors.error;
+    return Colors.danger;
   };
 
   const handleAddToLog = async () => {
@@ -98,123 +98,152 @@ export default function ScanResultsScreen() {
           <Image source={{ uri: imageUri }} style={styles.mealImage} />
         )}
 
-        <View style={styles.detectedCard}>
-          <Text style={styles.sectionTitle}>Detected Foods</Text>
-          <View style={styles.foodList}>
-            {foods.map((food: any, index: number) => (
-              <View key={index} style={styles.foodItem}>
-                <Text style={styles.foodEmoji}>{food.emoji}</Text>
-                <Text style={styles.foodName}>{food.name}</Text>
-                <Text style={styles.foodConfidence}>{food.confidence}%</Text>
-                <TouchableOpacity style={styles.editButton}>
-                  <Edit2 size={16} color={Colors.primary} />
-                </TouchableOpacity>
-              </View>
-            ))}
+        {/* Check if no food was detected */}
+        {(score === 0 && foods.length > 0 && foods[0].name === "No Food Detected") ? (
+          <View style={styles.noFoodCard}>
+            <Text style={styles.noFoodEmoji}>📷</Text>
+            <Text style={styles.noFoodTitle}>Take another!</Text>
+            <Text style={styles.noFoodText}>
+              We couldn't identify any food in this image. Please take a clear photo of your meal and try again.
+            </Text>
           </View>
-        </View>
-
-        <View style={styles.scoreCard}>
-          <Text style={styles.scoreLabel}>Your Gut Score</Text>
-          <Text style={styles.scoreValue}>{score}/100</Text>
-          <View style={[styles.statusBadge, { backgroundColor: statusInfo.color + '20' }]}>
-            {score >= 80 ? (
-              <Check size={14} color={statusInfo.color} />
-            ) : (
-              <AlertTriangle size={14} color={statusInfo.color} />
-            )}
-            <Text style={[styles.statusText, { color: statusInfo.color }]}>{statusInfo.text}</Text>
-          </View>
-
-          <View style={styles.scoreGrid}>
-            <View style={styles.scoreGridItem}>
-              <Text style={styles.scoreGridLabel}>FODMAP Risk</Text>
-              <Text style={[styles.scoreGridValue, { color: getScoreColor(100 - fodmapRisk, 100) }]}>
-                {fodmapRisk}/100
-              </Text>
-              <Text style={styles.scoreGridStatus}>{fodmapRisk < 30 ? 'Low' : fodmapRisk < 70 ? 'Med' : 'High'}</Text>
-              <View style={styles.scoreBar}>
-                <View style={[styles.scoreBarFill, { width: `${fodmapRisk}%`, backgroundColor: getScoreColor(100 - fodmapRisk, 100) }]} />
+        ) : (
+          <>
+            <View style={styles.detectedCard}>
+              <Text style={styles.sectionTitle}>Detected Foods</Text>
+              <View style={styles.foodList}>
+                {foods.map((food: any, index: number) => (
+                  <View key={index} style={styles.foodItem}>
+                    <Text style={styles.foodEmoji}>{food.emoji}</Text>
+                    <Text style={styles.foodName}>{food.name}</Text>
+                    <Text style={styles.foodConfidence}>{food.confidence}%</Text>
+                    <TouchableOpacity style={styles.editButton}>
+                      <Edit2 size={16} color={Colors.primary} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
               </View>
             </View>
 
-            <View style={styles.scoreGridItem}>
-              <Text style={styles.scoreGridLabel}>Fermentation</Text>
-              <Text style={[styles.scoreGridValue, { color: getScoreColor(100 - fermentation, 100) }]}>
-                {fermentation}/100
-              </Text>
-              <Text style={styles.scoreGridStatus}>{fermentation < 30 ? 'Low' : 'High'}</Text>
-              <View style={styles.scoreBar}>
-                <View style={[styles.scoreBarFill, { width: `${fermentation}%`, backgroundColor: getScoreColor(100 - fermentation, 100) }]} />
-              </View>
-            </View>
-
-            <View style={styles.scoreGridItem}>
-              <Text style={styles.scoreGridLabel}>Fiber Diversity</Text>
-              <Text style={[styles.scoreGridValue, { color: Colors.warning }]}>
-                {fiberDiversity}/10
-              </Text>
-              <Text style={styles.scoreGridStatus}>Moderate</Text>
-              <View style={styles.scoreBar}>
-                <View style={[styles.scoreBarFill, { width: `${fiberDiversity * 10}%`, backgroundColor: Colors.warning }]} />
-              </View>
-            </View>
-
-            <View style={styles.scoreGridItem}>
-              <Text style={styles.scoreGridLabel}>Probiotic Boost</Text>
-              <Text style={[styles.scoreGridValue, { color: Colors.textTertiary }]}>
-                {probioticBoost}/5
-              </Text>
-              <Text style={styles.scoreGridStatus}>None</Text>
-              <View style={styles.scoreBar}>
-                <View style={[styles.scoreBarFill, { width: `${probioticBoost * 20}%`, backgroundColor: Colors.textTertiary }]} />
-              </View>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.analysisSection}>
-          <Text style={[styles.analysisTitleGreen, { color: statusInfo.color }]}>{statusInfo.title}</Text>
-          <View style={styles.analysisList}>
-            {analysis.map((item: string, index: number) => (
-              <View key={index} style={styles.analysisItem}>
+            <View style={styles.scoreCard}>
+              <Text style={styles.scoreLabel}>Your Gut Score</Text>
+              <Text style={styles.scoreValue}>{score}/100</Text>
+              <View style={[styles.statusBadge, { backgroundColor: statusInfo.color + '20' }]}>
                 {score >= 80 ? (
-                  <Check size={16} color={Colors.success} />
+                  <Check size={14} color={statusInfo.color} />
                 ) : (
-                  <Zap size={16} color={Colors.textSecondary} />
+                  <AlertTriangle size={14} color={statusInfo.color} />
                 )}
-                <Text style={styles.analysisText}>{item}</Text>
+                <Text style={[styles.statusText, { color: statusInfo.color }]}>{statusInfo.text}</Text>
               </View>
-            ))}
-          </View>
-        </View>
 
-        <View style={[styles.analysisSection, styles.triggerSection]}>
-          <Text style={styles.analysisTitleOrange}>Potential Triggers</Text>
-          {triggers.length > 0 ? triggers.map((trigger: string, index: number) => (
-            <View key={index} style={styles.triggerCard}>
-              <AlertTriangle size={16} color={Colors.warning} />
-              <Text style={styles.triggerText}>{trigger}</Text>
-            </View>
-          )) : (
-            <Text style={styles.triggerText}>No triggers detected.</Text>
-          )}
-        </View>
+              <View style={styles.scoreGrid}>
+                <View style={styles.scoreGridItem}>
+                  <Text style={styles.scoreGridLabel}>FODMAP Risk</Text>
+                  <Text style={[styles.scoreGridValue, { color: getScoreColor(100 - fodmapRisk, 100) }]}>
+                    {fodmapRisk}/100
+                  </Text>
+                  <Text style={styles.scoreGridStatus}>{fodmapRisk < 30 ? 'Low' : fodmapRisk < 70 ? 'Med' : 'High'}</Text>
+                  <View style={styles.scoreBar}>
+                    <View style={[styles.scoreBarFill, { width: `${fodmapRisk}%`, backgroundColor: getScoreColor(100 - fodmapRisk, 100) }]} />
+                  </View>
+                </View>
 
-        <View style={[styles.analysisSection, styles.swapsSection]}>
-          <Text style={styles.analysisTitleGreen}>Better Swaps</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.swapsList}>
-              {swaps.map((swap: any, index: number) => (
-                <TouchableOpacity key={swap.id || index} style={styles.swapCard}>
-                  <Text style={styles.swapEmoji}>{swap.emoji}</Text>
-                  <Text style={styles.swapName}>{swap.name}</Text>
-                  <Text style={styles.swapScore}>+{swap.scoreIncrease} pts</Text>
-                </TouchableOpacity>
-              ))}
+                <View style={styles.scoreGridItem}>
+                  <Text style={styles.scoreGridLabel}>Fermentation</Text>
+                  <Text style={[styles.scoreGridValue, { color: getScoreColor(100 - fermentation, 100) }]}>
+                    {fermentation}/100
+                  </Text>
+                  <Text style={styles.scoreGridStatus}>{fermentation < 30 ? 'Low' : 'High'}</Text>
+                  <View style={styles.scoreBar}>
+                    <View style={[styles.scoreBarFill, { width: `${fermentation}%`, backgroundColor: getScoreColor(100 - fermentation, 100) }]} />
+                  </View>
+                </View>
+
+                <View style={styles.scoreGridItem}>
+                  <Text style={styles.scoreGridLabel}>Fiber Diversity</Text>
+                  <Text style={[styles.scoreGridValue, { color: Colors.warning }]}>
+                    {fiberDiversity}/10
+                  </Text>
+                  <Text style={styles.scoreGridStatus}>Moderate</Text>
+                  <View style={styles.scoreBar}>
+                    <View style={[styles.scoreBarFill, { width: `${fiberDiversity * 10}%`, backgroundColor: Colors.warning }]} />
+                  </View>
+                </View>
+
+                <View style={styles.scoreGridItem}>
+                  <Text style={styles.scoreGridLabel}>Probiotic Boost</Text>
+                  <Text style={[styles.scoreGridValue, { color: Colors.textTertiary }]}>
+                    {probioticBoost}/5
+                  </Text>
+                  <Text style={styles.scoreGridStatus}>None</Text>
+                  <View style={styles.scoreBar}>
+                    <View style={[styles.scoreBarFill, { width: `${probioticBoost * 20}%`, backgroundColor: Colors.textTertiary }]} />
+                  </View>
+                </View>
+              </View>
             </View>
-          </ScrollView>
-        </View>
+
+            <View style={styles.analysisSection}>
+              <Text style={[styles.analysisTitleGreen, { color: statusInfo.color }]}>{statusInfo.title}</Text>
+              <View style={styles.analysisList}>
+                {analysis.map((item: string, index: number) => (
+                  <View key={index} style={styles.analysisItem}>
+                    {score >= 80 ? (
+                      <Check size={16} color={Colors.success} />
+                    ) : (
+                      <Zap size={16} color={Colors.textSecondary} />
+                    )}
+                    <Text style={styles.analysisText}>{item}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            {triggers.length > 0 && (
+              <View style={[styles.analysisSection, styles.triggerSection]}>
+                <Text style={styles.analysisTitleOrange}>Heads Up</Text>
+                <Text style={styles.triggerSubtext}>
+                  These ingredients might not agree with everyone. See how you feel.
+                </Text>
+                {triggers.map((trigger: string, index: number) => (
+                  <View key={index} style={styles.triggerRow}>
+                    <View style={styles.triggerInfo}>
+                      <AlertTriangle size={16} color={Colors.warning} />
+                      <Text style={styles.triggerText}>{trigger}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.addTriggerButton}
+                      onPress={() => {
+                        // TODO: Add to user's trigger list
+                        Alert.alert('Added!', `"${trigger}" added to your triggers list.`);
+                      }}
+                    >
+                      <Text style={styles.addTriggerButtonText}>+ Add to Triggers</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {swaps.length > 0 && (
+              <View style={[styles.analysisSection, styles.swapsSection]}>
+                <Text style={styles.analysisTitleGreen}>Better Swaps</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.swapsList}>
+                    {swaps.map((swap: any, index: number) => (
+                      <TouchableOpacity key={swap.id || index} style={styles.swapCard}>
+                        <Text style={styles.swapEmoji}>{swap.emoji}</Text>
+                        <Text style={styles.swapName}>{swap.name}</Text>
+                        <Text style={styles.swapScore}>+{swap.scoreIncrease} pts</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+            )}
+          </>
+        )}
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 10 }]}>
@@ -262,6 +291,35 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 240,
     resizeMode: 'cover',
+  },
+  noFoodCard: {
+    margin: 20,
+    marginTop: -40,
+    backgroundColor: Colors.backgroundWhite,
+    borderRadius: 20,
+    padding: 40,
+    alignItems: 'center',
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  noFoodEmoji: {
+    fontSize: 48,
+    marginBottom: 16,
+  },
+  noFoodTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 8,
+  },
+  noFoodText: {
+    fontSize: 15,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
   },
   detectedCard: {
     margin: 20,
@@ -424,11 +482,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
   },
-  triggerText: {
+  triggerSubtext: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  triggerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  triggerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     flex: 1,
+  },
+  triggerText: {
     fontSize: 13,
     color: Colors.text,
     lineHeight: 20,
+  },
+  addTriggerButton: {
+    backgroundColor: Colors.warning,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  addTriggerButtonText: {
+    color: Colors.white,
+    fontSize: 11,
+    fontWeight: '600',
   },
   swapsSection: {
     backgroundColor: Colors.successLight,

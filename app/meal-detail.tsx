@@ -2,9 +2,10 @@ import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Alert } from 'rea
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { X, ArrowLeft, Edit2, RefreshCw, Trash2, Check, AlertTriangle, Clock } from 'lucide-react-native';
+import { X, ArrowLeft, Edit2, Trash2, Check, AlertTriangle, Clock, ChevronDown, ChevronUp } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
+import { useState } from 'react';
 
 export default function MealDetailScreen() {
   const router = useRouter();
@@ -13,6 +14,20 @@ export default function MealDetailScreen() {
   const { meals, deleteMeal } = useApp();
 
   const meal = meals.find(m => m.id === mealId) || meals[0];
+
+  // Safe defaults for potentially undefined properties
+  const mealFoods = meal?.foods || [];
+  const mealAnalysis = meal?.analysis || [];
+  const mealTriggers = meal?.triggers || [];
+  const mealSwaps = meal?.swaps || [];
+  const gutScores = meal?.gutScores || { fodmap: 0, fermentation: 0, fiber_diversity: 0, probiotic: 0 };
+  const fodmapRisk = gutScores.fodmap ?? 0;
+  const fermentation = gutScores.fermentation ?? 0;
+  const fiberDiversity = gutScores.fiber_diversity ?? 0;
+  const probioticBoost = gutScores.probiotic ?? 0;
+
+  // Collapsible state for Why This Score section
+  const [showAnalysis, setShowAnalysis] = useState(false);
 
   if (!meal) {
     return (
@@ -115,8 +130,8 @@ export default function MealDetailScreen() {
             </TouchableOpacity>
           </View>
           <View style={styles.foodsList}>
-            {meal.foods.map((food) => (
-              <View key={food.id} style={styles.foodItem}>
+            {mealFoods.map((food, index) => (
+              <View key={food.id || index} style={styles.foodItem}>
                 <Text style={styles.foodEmoji}>{food.emoji}</Text>
                 <Text style={styles.foodName}>{food.name}</Text>
                 <Text style={styles.foodConfidence}>{food.confidence}%</Text>
@@ -127,109 +142,140 @@ export default function MealDetailScreen() {
 
         <View style={styles.scoreCard}>
           <Text style={styles.scoreCardTitle}>Your Gut Score Breakdown</Text>
-          
+
           <View style={styles.scoreRow}>
             <Text style={styles.scoreLabel}>FODMAP Risk</Text>
-            <Text style={[styles.scoreValue, { color: getScoreColor(meal.fodmapRisk, 100) }]}>
-              {meal.fodmapRisk}/100
+            <Text style={[styles.scoreValue, { color: getScoreColor(fodmapRisk, 100) }]}>
+              {fodmapRisk}/100
             </Text>
             <Text style={styles.scoreStatus}>
-              {meal.fodmapRisk <= 30 ? 'Low' : meal.fodmapRisk <= 60 ? 'Medium' : 'High'}
+              {fodmapRisk <= 30 ? 'Low' : fodmapRisk <= 60 ? 'Medium' : 'High'}
             </Text>
           </View>
           <View style={styles.scoreBar}>
-            <View style={[styles.scoreBarFill, { 
-              width: `${meal.fodmapRisk}%`, 
-              backgroundColor: getScoreColor(meal.fodmapRisk, 100) 
+            <View style={[styles.scoreBarFill, {
+              width: `${fodmapRisk}%`,
+              backgroundColor: getScoreColor(fodmapRisk, 100)
             }]} />
           </View>
 
           <View style={styles.scoreRow}>
             <Text style={styles.scoreLabel}>Fermentation</Text>
-            <Text style={[styles.scoreValue, { color: getScoreColor(meal.fermentation, 100) }]}>
-              {meal.fermentation}/100
+            <Text style={[styles.scoreValue, { color: getScoreColor(fermentation, 100) }]}>
+              {fermentation}/100
             </Text>
             <Text style={styles.scoreStatus}>
-              {meal.fermentation <= 30 ? 'Low' : meal.fermentation <= 60 ? 'Medium' : 'High'}
+              {fermentation <= 30 ? 'Low' : fermentation <= 60 ? 'Medium' : 'High'}
             </Text>
           </View>
           <View style={styles.scoreBar}>
-            <View style={[styles.scoreBarFill, { 
-              width: `${meal.fermentation}%`, 
-              backgroundColor: getScoreColor(meal.fermentation, 100) 
+            <View style={[styles.scoreBarFill, {
+              width: `${fermentation}%`,
+              backgroundColor: getScoreColor(fermentation, 100)
             }]} />
           </View>
 
           <View style={styles.scoreRow}>
             <Text style={styles.scoreLabel}>Fiber Diversity</Text>
             <Text style={[styles.scoreValue, { color: Colors.warning }]}>
-              {meal.fiberDiversity}/10
+              {fiberDiversity}/10
             </Text>
             <Text style={styles.scoreStatus}>Moderate</Text>
           </View>
           <View style={styles.scoreBar}>
-            <View style={[styles.scoreBarFill, { 
-              width: `${meal.fiberDiversity * 10}%`, 
-              backgroundColor: Colors.warning 
+            <View style={[styles.scoreBarFill, {
+              width: `${fiberDiversity * 10}%`,
+              backgroundColor: Colors.warning
             }]} />
           </View>
 
           <View style={styles.scoreRow}>
             <Text style={styles.scoreLabel}>Probiotic Impact</Text>
             <Text style={[styles.scoreValue, { color: Colors.textTertiary }]}>
-              {meal.probioticBoost}/5
+              {probioticBoost}/5
             </Text>
             <Text style={styles.scoreStatus}>
-              {meal.probioticBoost <= 1 ? 'None' : meal.probioticBoost <= 3 ? 'Some' : 'Good'}
+              {probioticBoost <= 1 ? 'None' : probioticBoost <= 3 ? 'Some' : 'Good'}
             </Text>
           </View>
           <View style={styles.scoreBar}>
-            <View style={[styles.scoreBarFill, { 
-              width: `${meal.probioticBoost * 20}%`, 
-              backgroundColor: Colors.textTertiary 
+            <View style={[styles.scoreBarFill, {
+              width: `${probioticBoost * 20}%`,
+              backgroundColor: Colors.textTertiary
             }]} />
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.analysisTitleGreen}>Why This Score?</Text>
-          <View style={styles.analysisList}>
-            {meal.analysis.map((item, idx) => (
-              <View key={idx} style={styles.analysisItem}>
-                <Check size={16} color={Colors.success} />
-                <Text style={styles.analysisText}>{item}</Text>
-              </View>
-            ))}
-          </View>
-          {meal.triggers.length > 0 && (
-            <View style={styles.tipCard}>
-              <AlertTriangle size={16} color={Colors.warning} />
-              <Text style={styles.tipText}>
-                Tip: Consider swapping to whole grain options for better fiber diversity
-              </Text>
+          <TouchableOpacity
+            style={styles.analysisHeader}
+            onPress={() => setShowAnalysis(!showAnalysis)}
+            activeOpacity={0.7}
+          >
+            <View>
+              <Text style={styles.analysisTitleGreen}>Why This Score?</Text>
+              <Text style={styles.analysisSubtitle}>Tap to see how we analyzed this meal</Text>
             </View>
+            {showAnalysis ? (
+              <ChevronUp size={20} color={Colors.success} />
+            ) : (
+              <ChevronDown size={20} color={Colors.success} />
+            )}
+          </TouchableOpacity>
+          {showAnalysis && (
+            <>
+              <View style={styles.analysisList}>
+                {mealAnalysis.map((item, idx) => (
+                  <View key={idx} style={styles.analysisItem}>
+                    <Check size={16} color={Colors.success} />
+                    <Text style={styles.analysisText}>{item}</Text>
+                  </View>
+                ))}
+              </View>
+              {mealTriggers.length > 0 && (
+                <View style={styles.tipCard}>
+                  <AlertTriangle size={16} color={Colors.warning} />
+                  <Text style={styles.tipText}>
+                    Tip: Consider swapping to whole grain options for better fiber diversity
+                  </Text>
+                </View>
+              )}
+            </>
           )}
         </View>
 
-        {meal.triggers.length > 0 && (
+        {mealTriggers.length > 0 && (
           <View style={[styles.section, styles.triggerSection]}>
-            <Text style={styles.analysisTitleOrange}>Symptom Notes</Text>
-            <View style={styles.symptomCard}>
-              <Clock size={16} color={Colors.warning} />
-              <Text style={styles.symptomText}>
-                You logged bloating 2 hours after this meal
-              </Text>
-            </View>
+            <Text style={styles.analysisTitleOrange}>Heads Up</Text>
+            <Text style={styles.triggerSubtext}>
+              These ingredients might not agree with everyone.
+            </Text>
+            {mealTriggers.map((trigger: string, index: number) => (
+              <View key={index} style={styles.triggerRow}>
+                <View style={styles.triggerInfo}>
+                  <AlertTriangle size={16} color={Colors.warning} />
+                  <Text style={styles.triggerText}>{trigger}</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.addTriggerButton}
+                  onPress={() => {
+                    Alert.alert('Added!', `"${trigger}" added to your triggers list.`);
+                  }}
+                >
+                  <Text style={styles.addTriggerButtonText}>+ Add</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
           </View>
         )}
 
-        {meal.swaps.length > 0 && (
+        {mealSwaps.length > 0 && (
           <View style={[styles.section, styles.swapsSection]}>
             <Text style={styles.analysisTitleGreen}>Better Swaps</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               <View style={styles.swapsList}>
-                {meal.swaps.map((swap) => (
-                  <TouchableOpacity key={swap.id} style={styles.swapCard}>
+                {mealSwaps.map((swap, index) => (
+                  <TouchableOpacity key={swap.id || index} style={styles.swapCard}>
                     <Text style={styles.swapEmoji}>{swap.emoji}</Text>
                     <Text style={styles.swapName}>{swap.name}</Text>
                     <Text style={styles.swapScore}>Score: +{swap.scoreIncrease}</Text>
@@ -243,20 +289,12 @@ export default function MealDetailScreen() {
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 20 }]}>
         <TouchableOpacity
-          style={styles.rescanButton}
-          onPress={() => router.push('/(tabs)/scan')}
-          activeOpacity={0.8}
-        >
-          <RefreshCw size={18} color={Colors.white} />
-          <Text style={styles.rescanButtonText}>Rescan This Meal</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.deleteButton}
+          style={styles.deleteLink}
           onPress={handleDelete}
           activeOpacity={0.7}
         >
-          <Trash2 size={18} color={Colors.danger} />
-          <Text style={styles.deleteButtonText}>Delete from History</Text>
+          <Trash2 size={14} color={Colors.textTertiary} />
+          <Text style={styles.deleteLinkText}>Delete from History</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -416,11 +454,22 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 2,
   },
+  analysisHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
   analysisTitleGreen: {
     fontSize: 15,
     fontWeight: '600' as const,
     color: Colors.success,
-    marginBottom: 12,
+    marginBottom: 0,
+  },
+  analysisSubtitle: {
+    fontSize: 12,
+    color: Colors.textTertiary,
+    marginTop: 2,
   },
   analysisTitleOrange: {
     fontSize: 15,
@@ -461,6 +510,40 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     marginHorizontal: -4,
+  },
+  triggerSubtext: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  triggerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  triggerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  triggerText: {
+    fontSize: 13,
+    color: Colors.text,
+    lineHeight: 20,
+  },
+  addTriggerButton: {
+    backgroundColor: Colors.warning,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  addTriggerButtonText: {
+    color: Colors.white,
+    fontSize: 11,
+    fontWeight: '600' as const,
   },
   symptomCard: {
     flexDirection: 'row',
@@ -536,20 +619,16 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     color: Colors.white,
   },
-  deleteButton: {
+  deleteLink: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.danger,
-    backgroundColor: Colors.dangerLight,
+    gap: 6,
+    paddingVertical: 12,
   },
-  deleteButtonText: {
-    fontSize: 15,
-    fontWeight: '500' as const,
-    color: Colors.danger,
+  deleteLinkText: {
+    fontSize: 13,
+    fontWeight: '400' as const,
+    color: Colors.textTertiary,
   },
 });

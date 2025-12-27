@@ -51,11 +51,20 @@ export interface FoodSwap {
 export interface Symptom {
   id: string;
   timestamp: Date;
-  types: string[];
-  intensity: number;
-  mealAssociation: 'just_after' | '2_3_hours' | 'other';
+  bloat: number;      // 0-5 scale
+  energy: number;     // 0-5 scale
+  pain: number;       // 0-5 scale
   associatedMealId?: string;
-  notes: string;
+  notes?: string;
+}
+
+export interface FoodListItem {
+  id: string;
+  name: string;
+  category: 'safe' | 'limit' | 'avoid';
+  source: 'ai' | 'manual' | 'trigger_engine';
+  confidence: number;
+  lastEaten?: Date;
 }
 
 export interface Trigger {
@@ -63,6 +72,7 @@ export interface Trigger {
   name: string;
   confidence: number;
   status: 'avoid' | 'limit' | 'monitor';
+  lastEaten?: Date;
 }
 
 export interface OnboardingState {
@@ -73,6 +83,10 @@ export interface OnboardingState {
     dietaryRestrictions?: string[];
     ageRange?: string;
     symptomFrequency?: string;
+    hasCoach?: boolean;
+    mainGoal?: string;
+    barriers?: string;
+    triedOtherApps?: boolean;
   };
   permissionsGranted: {
     camera: boolean;

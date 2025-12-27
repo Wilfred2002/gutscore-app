@@ -3,11 +3,21 @@ import { StyleSheet, Text, View, ScrollView, TouchableOpacity, RefreshControl } 
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { Clock, TrendingUp, Camera, ChevronRight, AlertTriangle } from 'lucide-react-native';
+import { Clock, TrendingUp, Camera, ChevronRight, AlertTriangle, Shield, Ban, AlertCircle } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { Meal, Trigger } from '@/types';
 import { analyzeTriggers } from '@/lib/trigger-engine';
+
+// Gut Risk Forecast calculation
+type RiskLevel = 'low' | 'medium' | 'high';
+
+interface GutRiskForecast {
+  level: RiskLevel;
+  emoji: string;
+  color: string;
+  message: string;
+}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -31,9 +41,101 @@ export default function HomeScreen() {
     }
   }, [isLoading, onboarding.completed, router]);
 
+  // Calculate Gut Risk Forecast
+  const gutRiskForecast = useMemo((): GutRiskForecast => {
+    // Check recent symptoms (last 24 hours)
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const recentSymptoms = symptoms.filter(s => new Date(s.timestamp) >= oneDayAgo);
+
+    // Calculate symptom severity
+    const avgSeverity = recentSymptoms.length > 0
+      ? recentSymptoms.reduce((sum, s) => sum + Math.max(s.bloat, s.pain) + (5 - s.energy), 0) / recentSymptoms.length
+      : 0;
+
+    // Check if any trigger foods were eaten recently
+    const recentMealFoods = todaysMeals.flatMap(m => m.foods.map(f => f.name.toLowerCase()));
+    const triggersEatenToday = triggers.filter(t =>
+      recentMealFoods.some(food => food.includes(t.name.toLowerCase()))
+    );
+
+    // Determine risk level
+    if (avgSeverity >= 6 || triggersEatenToday.length >= 2) {
+      return {
+        level: 'high',
+        emoji: '🔴',
+        color: Colors.danger,
+        message: recentSymptoms.length > 0
+          ? "You've had symptoms recently. Take it easy today."
+          : triggersEatenToday.length > 0
+            ? `Watch out - you had ${triggersEatenToday[0]?.name} which often bothers you.`
+            : "Your gut may be sensitive today."
+      };
+    }
+
+    if (avgSeverity >= 3 || triggersEatenToday.length >= 1) {
+      return {
+        level: 'medium',
+        emoji: '🟡',
+        color: Colors.warning,
+        message: triggersEatenToday.length > 0
+          ? `You had ${triggersEatenToday[0]?.name} - monitor how you feel.`
+          : "Mild symptoms detected. Stick to safe foods."
+      };
+    }
+
+    return {
+      level: 'low',
+      emoji: '🟢',
+      color: Colors.success,
+      message: "Looking good! Your gut is feeling great."
+    };
+  }, [symptoms, todaysMeals, triggers]);
+
+  // Get top 3 triggers for display
+  const topTriggers = useMemo(() => triggers.slice(0, 3), [triggers]);
+
+  // Get safe foods (foods eaten without symptoms)
+  const safeFoods = useMemo(() => {
+    const foodsWithSymptoms = new Set<string>();
+
+    // Find foods that are followed by symptoms
+    symptoms.forEach(symptom => {
+      const symptomTime = new Date(symptom.timestamp).getTime();
+      const isSevere = symptom.bloat >= 3 || symptom.pain >= 3 || symptom.energy <= 2;
+
+      if (isSevere) {
+        meals.forEach(meal => {
+          const mealTime = new Date(meal.timestamp).getTime();
+          const diffHours = (symptomTime - mealTime) / (1000 * 60 * 60);
+          if (diffHours >= 0.5 && diffHours <= 6) {
+            meal.foods.forEach(f => foodsWithSymptoms.add(f.name.toLowerCase()));
+          }
+        });
+      }
+    });
+
+    // Find foods eaten 3+ times without symptoms
+    const foodCounts: Record<string, { name: string; count: number }> = {};
+    meals.forEach(meal => {
+      meal.foods.forEach(f => {
+        const key = f.name.toLowerCase();
+        if (!foodsWithSymptoms.has(key)) {
+          if (!foodCounts[key]) {
+            foodCounts[key] = { name: f.name, count: 0 };
+          }
+          foodCounts[key].count++;
+        }
+      });
+    });
+
+    return Object.values(foodCounts)
+      .filter(f => f.count >= 2)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+  }, [meals, symptoms]);
+
   const onRefresh = async () => {
     setRefreshing(true);
-    // Simulate refresh (in production this might re-fetch from Supabase)
     await new Promise(resolve => setTimeout(resolve, 1000));
     setRefreshing(false);
   };
@@ -53,15 +155,20 @@ export default function HomeScreen() {
     return 'evening';
   };
 
-  const getDayName = () => {
-    return new Date().toLocaleDateString('en-US', { weekday: 'long' });
-  };
-
   const getStatus = (meal: Meal): 'safe' | 'caution' | 'avoid' => {
     if (meal.status) return meal.status;
     if (meal.score >= 80) return 'safe';
     if (meal.score >= 50) return 'caution';
     return 'avoid';
+  };
+
+  const getStatusColor = (status: Trigger['status']) => {
+    switch (status) {
+      case 'avoid': return Colors.danger;
+      case 'limit': return Colors.warning;
+      case 'monitor': return '#FF9500';
+      default: return Colors.warning;
+    }
   };
 
   const renderMealCard = (meal: Meal) => {
@@ -105,11 +212,6 @@ export default function HomeScreen() {
     return null;
   }
 
-  // Calculate live average score
-  const avgScore = meals.length > 0
-    ? Math.round(meals.reduce((acc, m) => acc + m.score, 0) / meals.length)
-    : 0;
-
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <ScrollView
@@ -120,16 +222,13 @@ export default function HomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
         }
       >
+        {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerTop}>
             <View style={styles.headerLeft}>
-              <Text style={styles.greeting}>Hey {user?.name?.split(' ')[0] || 'there'}, {getDayName()} {getGreeting()}</Text>
-              <View style={styles.timeRow}>
-                <Clock size={14} color={Colors.textTertiary} />
-                <Text style={styles.timeText}>
-                  {new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
-                </Text>
-              </View>
+              <Text style={styles.greeting}>
+                Good {getGreeting()}, {user?.name?.split(' ')[0] || 'there'} 👋
+              </Text>
             </View>
             {(user?.streak || 0) > 0 && (
               <View style={styles.streakBadge}>
@@ -140,49 +239,58 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <View style={styles.statsCard}>
-          <Text style={styles.statsTitle}>Your Gut This Week</Text>
-          <View style={styles.statsGrid}>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{avgScore || '-'}</Text>
-              <View style={styles.statChange}>
-                <TrendingUp size={12} color={Colors.success} />
-                <Text style={styles.statChangeText}>{weeklyStats.scoreChange}%</Text>
-              </View>
-              <Text style={styles.statLabel}>Avg Score</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{meals.length}</Text>
-              <Text style={styles.statLabel}>Meals</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{triggers.length}</Text>
-              <Text style={styles.statLabel}>Triggers</Text>
+        {/* Gut Risk Forecast - PROMINENT */}
+        <View style={[styles.riskCard, { borderLeftColor: gutRiskForecast.color }]}>
+          <View style={styles.riskHeader}>
+            <Text style={styles.riskEmoji}>{gutRiskForecast.emoji}</Text>
+            <View style={styles.riskTextContainer}>
+              <Text style={styles.riskTitle}>
+                Today's Gut Risk: <Text style={{ color: gutRiskForecast.color, textTransform: 'capitalize' }}>{gutRiskForecast.level}</Text>
+              </Text>
+              <Text style={styles.riskMessage}>{gutRiskForecast.message}</Text>
             </View>
           </View>
         </View>
 
-        {triggers.length > 0 && (
+        {/* Quick Actions */}
+        <View style={styles.quickActions}>
+          <TouchableOpacity
+            style={[styles.quickActionButton, styles.safeButton]}
+            onPress={() => router.push('/food-lists')}
+            activeOpacity={0.7}
+          >
+            <Shield size={20} color={Colors.success} />
+            <Text style={styles.quickActionText}>Safe Foods</Text>
+            <Text style={styles.quickActionCount}>{safeFoods.length}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.quickActionButton, styles.avoidButton]}
+            onPress={() => router.push('/food-lists')}
+            activeOpacity={0.7}
+          >
+            <Ban size={20} color={Colors.danger} />
+            <Text style={styles.quickActionText}>Avoid</Text>
+            <Text style={styles.quickActionCount}>{triggers.filter(t => t.status === 'avoid').length}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Safe Foods Preview */}
+        {safeFoods.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Potential Triggers Detected</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12 }}>
-              {triggers.map(trigger => (
-                <View key={trigger.id} style={styles.triggerCard}>
-                  <View style={styles.triggerIcon}>
-                    <AlertTriangle size={20} color={Colors.warning} />
-                  </View>
-                  <View>
-                    <Text style={styles.triggerName}>{trigger.name}</Text>
-                    <Text style={styles.triggerConfidence}>{trigger.confidence}% confidence</Text>
-                  </View>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>✅ Safe for You</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.safeFoodsList}>
+              {safeFoods.map((food, index) => (
+                <View key={index} style={styles.safeFoodChip}>
+                  <Text style={styles.safeFoodText}>{food.name}</Text>
                 </View>
               ))}
             </ScrollView>
           </View>
         )}
 
+        {/* Today's Meals */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Today&apos;s Meals</Text>
           {todaysMeals.length > 0 ? (
@@ -190,34 +298,27 @@ export default function HomeScreen() {
               {todaysMeals.map(renderMealCard)}
             </View>
           ) : (
-            <View style={styles.emptyState}>
-              <Camera size={40} color={Colors.textTertiary} />
+            <TouchableOpacity
+              style={styles.emptyState}
+              onPress={() => router.push('/(tabs)/scan')}
+              activeOpacity={0.8}
+            >
+              <Camera size={40} color={Colors.primary} />
               <Text style={styles.emptyText}>No meals yet today</Text>
-              <Text style={styles.emptySubtext}>Tap the camera to scan your first meal</Text>
-            </View>
+              <Text style={styles.emptySubtext}>Tap to scan your first meal</Text>
+            </TouchableOpacity>
           )}
         </View>
-
-        {meals.length > todaysMeals.length && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Recent Meals</Text>
-            <View style={styles.mealsList}>
-              {meals.slice(0, 3).filter(m => !todaysMeals.includes(m)).map(renderMealCard)}
-            </View>
-          </View>
-        )}
       </ScrollView>
 
+      {/* Large Scan FAB */}
       <TouchableOpacity
         style={[styles.fab, { bottom: 20 }]}
         onPress={() => router.push('/(tabs)/scan')}
         activeOpacity={0.9}
       >
-        <Camera size={24} color={Colors.white} />
-        {/* Badge hint if no meals today */}
-        {todaysMeals.length === 0 && (
-          <View style={styles.fabBadge} />
-        )}
+        <Camera size={28} color={Colors.white} />
+        <Text style={styles.fabText}>Scan Meal</Text>
       </TouchableOpacity>
     </View>
   );
@@ -233,21 +334,20 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 100,
+    paddingBottom: 120,
   },
   header: {
-    paddingVertical: 20,
+    paddingVertical: 16,
   },
   greeting: {
-    fontSize: 20,
-    fontWeight: '600' as const,
+    fontSize: 22,
+    fontWeight: '700',
     color: Colors.text,
-    marginBottom: 4,
   },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
   headerLeft: {
     flex: 1,
@@ -266,79 +366,154 @@ const styles = StyleSheet.create({
   },
   streakText: {
     fontSize: 15,
-    fontWeight: '700' as const,
+    fontWeight: '700',
     color: Colors.white,
   },
-  timeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  timeText: {
-    fontSize: 13,
-    color: Colors.textTertiary,
-  },
-  statsCard: {
-    backgroundColor: Colors.primary,
+
+  // Risk Forecast Card
+  riskCard: {
+    backgroundColor: Colors.backgroundWhite,
     borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
-  },
-  statsTitle: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    color: Colors.white,
+    padding: 16,
     marginBottom: 16,
-    textAlign: 'center',
+    borderLeftWidth: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  statsGrid: {
+  riskHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  statItem: {
+  riskEmoji: {
+    fontSize: 32,
+    marginRight: 12,
+  },
+  riskTextContainer: {
     flex: 1,
-    alignItems: 'center',
   },
-  statNumber: {
-    fontSize: 28,
-    fontWeight: '700' as const,
-    color: Colors.white,
+  riskTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 4,
   },
-  statChange: {
+  riskMessage: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+
+  // Quick Actions
+  quickActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  quickActionButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 10,
-    marginTop: 4,
+    padding: 14,
+    borderRadius: 12,
+    gap: 8,
   },
-  statChangeText: {
-    fontSize: 11,
-    color: Colors.success,
-    fontWeight: '500' as const,
+  safeButton: {
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
   },
-  statLabel: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: 4,
+  avoidButton: {
+    backgroundColor: 'rgba(244, 67, 54, 0.1)',
   },
-  statDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+  quickActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+    flex: 1,
   },
+  quickActionCount: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+  },
+
+  // Sections
   section: {
     marginBottom: 24,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600' as const,
-    color: Colors.text,
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 12,
   },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  sectionLink: {
+    fontSize: 14,
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+
+  // Triggers
+  triggersList: {
+    gap: 8,
+  },
+  triggerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.backgroundWhite,
+    padding: 14,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    gap: 12,
+  },
+  triggerBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  triggerBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.white,
+    letterSpacing: 0.5,
+  },
+  triggerName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.text,
+    flex: 1,
+  },
+  triggerConfidence: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+
+  // Safe Foods
+  safeFoodsList: {
+    gap: 8,
+  },
+  safeFoodChip: {
+    backgroundColor: 'rgba(76, 175, 80, 0.15)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.3)',
+  },
+  safeFoodText: {
+    fontSize: 14,
+    color: Colors.success,
+    fontWeight: '600',
+  },
+
+  // Meals
   mealsList: {
     gap: 12,
   },
@@ -365,7 +540,7 @@ const styles = StyleSheet.create({
   },
   mealName: {
     fontSize: 15,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: Colors.text,
     marginBottom: 4,
   },
@@ -377,7 +552,7 @@ const styles = StyleSheet.create({
   },
   mealStatus: {
     fontSize: 12,
-    fontWeight: '500' as const,
+    fontWeight: '500',
   },
   mealScore: {
     fontSize: 12,
@@ -392,73 +567,51 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.textTertiary,
   },
+
+  // Empty State
   emptyState: {
     alignItems: 'center',
     paddingVertical: 40,
     backgroundColor: Colors.backgroundWhite,
     borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    borderStyle: 'dashed',
   },
   emptyText: {
-    fontSize: 15,
-    fontWeight: '500' as const,
+    fontSize: 16,
+    fontWeight: '600',
     color: Colors.text,
     marginTop: 12,
   },
   emptySubtext: {
-    fontSize: 13,
-    color: Colors.textTertiary,
+    fontSize: 14,
+    color: Colors.primary,
     marginTop: 4,
+    fontWeight: '500',
   },
+
+  // FAB
   fab: {
     position: 'absolute',
     right: 20,
-    width: 56,
+    left: 20,
     height: 56,
     borderRadius: 28,
     backgroundColor: Colors.primary,
+    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  fabBadge: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: Colors.warning,
-    borderWidth: 2,
-    borderColor: Colors.primary,
-  },
-  triggerCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.warningLight,
-    padding: 12,
-    borderRadius: 12,
-    gap: 12,
-    minWidth: 200,
-  },
-  triggerIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  triggerName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.text,
-  },
-  triggerConfidence: {
-    fontSize: 12,
-    color: Colors.textSecondary,
+  fabText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: Colors.white,
   },
 });

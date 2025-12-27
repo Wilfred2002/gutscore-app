@@ -37,7 +37,10 @@ export const analyzeTriggers = (meals: Meal[], symptoms: Symptom[]): Trigger[] =
     });
 
     // 2. Correlate Symptoms to Meals
-    const significantSymptoms = symptoms.filter(s => s.intensity >= 4);
+    // Significant symptoms: high bloat/pain (>=3) or low energy (<=2)
+    const significantSymptoms = symptoms.filter(s =>
+        s.bloat >= 3 || s.pain >= 3 || s.energy <= 2
+    );
 
     significantSymptoms.forEach(symptom => {
         const symptomTime = new Date(symptom.timestamp).getTime();
@@ -62,7 +65,9 @@ export const analyzeTriggers = (meals: Meal[], symptoms: Symptom[]): Trigger[] =
                 const normalizedName = food.name.toLowerCase().trim();
                 if (suspects[normalizedName] && !processedFoods.has(normalizedName)) {
                     suspects[normalizedName].occurrences += 1;
-                    suspects[normalizedName].correlatedIntensity_sum += symptom.intensity;
+                    // Calculate severity from bloat/pain (higher is worse) and energy (lower is worse)
+                    const severity = Math.max(symptom.bloat, symptom.pain) + (5 - symptom.energy);
+                    suspects[normalizedName].correlatedIntensity_sum += severity;
                     processedFoods.add(normalizedName);
                 }
             });

@@ -43,48 +43,73 @@ export const analyzeFoodImage = async (base64Image: string): Promise<AIAnalysisR
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // Cost-effective vision model
+      model: "gpt-4.1-mini", // Cost-effective vision model
       messages: [
         {
           role: "system",
-          content: `You are a gut health expert AI. Analyze the food in the image for IBS/gut health impact.
-          Return a JSON object with the following structure:
-          {
-            "foods": [{"name": "Food Name", "confidence": 0-100, "emoji": "🥗", "description": "short text"}],
-            "gutScores": {
-              "fodmap": 0-100 (0=safe, 100=high risk),
-              "fermentation": 0-100 (gas potential),
-              "fiber_diversity": 0-10 (plant variety score),
-              "probiotic": 0-5 (fermented food score)
-            },
-            "overallScore": 0-100 (100 = perfect for gut health),
-            "analysis": ["Bullet point 1", "Bullet point 2"],
-            "triggers": ["Potential trigger 1 (e.g. lactose)"],
-            "swaps": [{"name": "Alternative Food", "emoji": "🥕", "scoreIncrease": 10, "reason": "why better"}]
-          }
-          Be conservative with FODMAP ratings. Accurately identify ingredients.`
+          content: `You are a gut health expert AI. Analyze the image for food content and IBS/gut health impact.
+
+IMPORTANT: First check if the image contains food. If NO food is detected, return:
+{
+  "foods": [],
+  "gutScores": {"fodmap": 0, "fermentation": 0, "fiber_diversity": 0, "probiotic": 0},
+  "overallScore": 0,
+  "analysis": ["No food detected in this image. Please take a photo of your meal."],
+  "triggers": [],
+  "swaps": [],
+  "noFoodDetected": true
+}
+
+If food IS detected, return this structure:
+{
+  "foods": [{"name": "Food Name", "confidence": 0-100, "emoji": "🥗", "description": "short text"}],
+  "gutScores": {
+    "fodmap": 0-100 (0=safe, 100=high risk),
+    "fermentation": 0-100 (gas potential),
+    "fiber_diversity": 0-10 (plant variety score),
+    "probiotic": 0-5 (fermented food score)
+  },
+  "overallScore": 0-100 (100 = perfect for gut health),
+  "analysis": ["Bullet point 1", "Bullet point 2"],
+  "triggers": ["Potential trigger 1 (e.g. lactose)"],
+  "swaps": [{"name": "Alternative Food", "emoji": "🥕", "scoreIncrease": 10, "reason": "why better"}],
+  "noFoodDetected": false
+}
+
+Be conservative with FODMAP ratings. Accurately identify ingredients. Always return valid JSON.`
         },
         {
           role: "user",
           content: [
-            { type: "text", text: "Analyze this meal for gut health." },
+            { type: "text", text: "Analyze this image. First determine if it contains food, then provide gut health analysis if it does." },
             {
               type: "image_url",
               image_url: {
-                "url": `data:image/jpeg;base64,${base64Image}`,
+                url: `data:image/jpeg;base64,${base64Image}`,
+                detail: "low", // Low detail for cost savings - food recognition doesn't need high res
               },
             },
           ],
         },
       ],
-      max_tokens: 1000,
+      max_completion_tokens: 1000,
       response_format: { type: "json_object" },
     });
 
-    const content = response.choices[0].message.content;
-    if (!content) throw new Error('No analysis returned');
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      console.warn('Empty response from OpenAI, returning mock data');
+      return getNoFoodAnalysis();
+    }
 
-    return JSON.parse(content) as AIAnalysisResult;
+    const result = JSON.parse(content) as AIAnalysisResult & { noFoodDetected?: boolean };
+
+    // Check if no food was detected
+    if (result.noFoodDetected || result.foods.length === 0) {
+      return getNoFoodAnalysis();
+    }
+
+    return result;
 
   } catch (error) {
     console.error('OpenAI Analysis failed:', error);
@@ -92,6 +117,22 @@ export const analyzeFoodImage = async (base64Image: string): Promise<AIAnalysisR
     return getMockAnalysis();
   }
 };
+
+const getNoFoodAnalysis = (): AIAnalysisResult => ({
+  foods: [
+    { name: "No Food Detected", confidence: 0, emoji: "❓", description: "Please take a photo of your meal" }
+  ],
+  gutScores: {
+    fodmap: 0,
+    fermentation: 0,
+    fiber_diversity: 0,
+    probiotic: 0,
+  },
+  overallScore: 0,
+  analysis: ["No food was detected in this image.", "Please take a clear photo of your meal and try again."],
+  triggers: [],
+  swaps: [],
+});
 
 const getMockAnalysis = (): AIAnalysisResult => ({
   foods: [
@@ -140,12 +181,12 @@ Guidelines:
 - Never diagnose or replace medical advice`;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4.1-mini",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: message }
       ],
-      max_tokens: 500,
+      max_completion_tokens: 500,
     });
 
     return response.choices[0].message.content || "I couldn't generate a response. Please try again.";
@@ -170,7 +211,7 @@ export const analyzeFoodList = async (foods: string[]): Promise<AIAnalysisResult
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4.1-mini",
       messages: [
         {
           role: "system",
@@ -195,7 +236,7 @@ export const analyzeFoodList = async (foods: string[]): Promise<AIAnalysisResult
           content: `Analyze this meal for gut health. Foods: ${foods.join(', ')}`
         }
       ],
-      max_tokens: 800,
+      max_completion_tokens: 800,
       response_format: { type: "json_object" },
     });
 

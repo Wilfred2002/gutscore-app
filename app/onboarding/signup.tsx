@@ -1,204 +1,122 @@
-import { useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { useState, useRef } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Eye, EyeOff, ArrowLeft } from 'lucide-react-native';
-import Colors from '@/constants/colors';
+import { ArrowLeft } from 'lucide-react-native';
 import { useApp } from '@/contexts/AppContext';
 
 export default function SignUpScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { updateOnboarding, signUp, signInWithGoogle } = useApp();
+  const { completeOnboarding, signInWithGoogle } = useApp();
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({});
+  const [error, setError] = useState<string | null>(null);
 
-  const validateForm = () => {
-    const newErrors: { email?: string; password?: string } = {};
+  const progressAnim = useRef(new Animated.Value(1)).current; // Full progress
 
-    if (!email || !/\S+@\S+\.\S+/.test(email)) {
-      newErrors.email = 'Please enter a valid email address';
-    }
-    if (!password || password.length < 8) {
-      newErrors.password = 'Password must be at least 8 characters';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleContinue = async () => {
-    if (!validateForm()) return;
-
-    setIsLoading(true);
-    setErrors({});
-
-    try {
-      // Sign up with Supabase
-      const { data, error } = await signUp(email, password);
-
-      if (error) {
-        setErrors({ general: error });
-        setIsLoading(false);
-        return;
-      }
-
-      // Store user info in onboarding state
-      await updateOnboarding({
-        currentStep: 1,
-        quizAnswers: {
-          email
-        }
-      });
-
-      setIsLoading(false);
-      router.push('/onboarding/quiz');
-    } catch (error: any) {
-      console.error('Signup error:', error);
-      setErrors({ general: error.message || 'Failed to create account' });
-      setIsLoading(false);
-    }
+  const handleBack = () => {
+    router.back();
   };
 
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
-    setErrors({});
+    setError(null);
 
     try {
-      const { data, error } = await signInWithGoogle();
+      const { data, error: signInError } = await signInWithGoogle();
 
-      if (error) {
-        setErrors({ general: error });
+      if (signInError) {
+        setError(signInError);
         setIsLoading(false);
         return;
       }
 
-      // Store user info in onboarding state
-      await updateOnboarding({
-        currentStep: 1,
-        quizAnswers: {}
-      });
-
+      // Complete onboarding and go to main app
+      await completeOnboarding();
       setIsLoading(false);
-      router.push('/onboarding/quiz');
-    } catch (error: any) {
-      console.error('Google sign-in error:', error);
-      setErrors({ general: error.message || 'Failed to sign in with Google' });
+      router.replace('/(tabs)');
+    } catch (err: any) {
+      console.error('Google sign-in error:', err);
+      setError(err.message || 'Failed to sign in with Google');
       setIsLoading(false);
     }
   };
 
+  const handleSkip = async () => {
+    // Allow using app without signin (limited features)
+    await completeOnboarding();
+    router.replace('/(tabs)');
+  };
+
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+    <View style={[styles.container, { paddingTop: insets.top + 20 }]}>
+      {/* Header with back button and progress */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+          <ArrowLeft size={24} color="#000000" />
+        </TouchableOpacity>
+        <View style={styles.progressContainer}>
+          <Animated.View
+            style={[
+              styles.progressBar,
+              {
+                width: progressAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['0%', '100%'],
+                }),
+              },
+            ]}
+          />
+        </View>
+      </View>
+
+      {/* Title */}
+      <View style={styles.content}>
+        <Text style={styles.title}>Save your progress</Text>
+      </View>
+
+      {/* Auth buttons */}
+      <View style={[styles.footer, { paddingBottom: insets.bottom + 20 }]}>
+        {error && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
+
+        {/* Apple Sign In - Black */}
+        <TouchableOpacity
+          style={[styles.appleButton, isLoading && styles.buttonDisabled]}
+          onPress={() => { }} // TODO: Implement Apple Sign In
+          activeOpacity={0.8}
+          disabled={true} // Not implemented yet
         >
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <ArrowLeft size={24} color={Colors.text} />
-          </TouchableOpacity>
+          <Text style={styles.appleIcon}>🍎</Text>
+          <Text style={styles.appleButtonText}>Sign in with Apple</Text>
+        </TouchableOpacity>
 
-          <View style={styles.header}>
-            <Text style={styles.title}>Create Your Account</Text>
-            <Text style={styles.subtitle}>Skip the clutter. Sync later.</Text>
-          </View>
+        {/* Google Sign In - White with border */}
+        <TouchableOpacity
+          style={[styles.googleButton, isLoading && styles.buttonDisabled]}
+          onPress={handleGoogleSignIn}
+          activeOpacity={0.8}
+          disabled={isLoading}
+        >
+          <Text style={styles.googleIcon}>G</Text>
+          <Text style={styles.googleButtonText}>
+            {isLoading ? 'Signing in...' : 'Sign in with Google'}
+          </Text>
+        </TouchableOpacity>
 
-          <View style={styles.form}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Email</Text>
-              <TextInput
-                style={[styles.input, errors.email && styles.inputError]}
-                placeholder="your@email.com"
-                placeholderTextColor={Colors.textTertiary}
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Password</Text>
-              <View style={styles.passwordContainer}>
-                <TextInput
-                  style={[styles.input, styles.passwordInput, errors.password && styles.inputError]}
-                  placeholder="Min 8 characters"
-                  placeholderTextColor={Colors.textTertiary}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                />
-                <TouchableOpacity
-                  style={styles.eyeButton}
-                  onPress={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? (
-                    <EyeOff size={20} color={Colors.textTertiary} />
-                  ) : (
-                    <Eye size={20} color={Colors.textTertiary} />
-                  )}
-                </TouchableOpacity>
-              </View>
-              {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
-            </View>
-          </View>
-
-          <View style={styles.buttonSection}>
-            {errors.general && (
-              <View style={styles.errorBox}>
-                <Text style={styles.errorBoxText}>{errors.general}</Text>
-              </View>
-            )}
-
-            <TouchableOpacity
-              style={[styles.primaryButton, isLoading && styles.primaryButtonDisabled]}
-              onPress={handleContinue}
-              activeOpacity={0.8}
-              disabled={isLoading}
-            >
-              <Text style={styles.primaryButtonText}>
-                {isLoading ? 'Creating account...' : 'Continue with Email'}
-              </Text>
-            </TouchableOpacity>
-
-            <View style={styles.dividerContainer}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            <TouchableOpacity
-              style={[styles.googleButton, isLoading && styles.googleButtonDisabled]}
-              onPress={handleGoogleSignIn}
-              activeOpacity={0.8}
-              disabled={isLoading}
-            >
-              <Text style={styles.googleButtonText}>Continue with Google</Text>
-            </TouchableOpacity>
-
-            <View style={styles.signupPrompt}>
-              <Text style={styles.signupPromptText}>Already have an account? </Text>
-              <TouchableOpacity onPress={() => router.push('/onboarding/login')}>
-                <Text style={styles.signupLink}>Log In</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        {/* Skip link */}
+        <TouchableOpacity
+          style={styles.skipLink}
+          onPress={handleSkip}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.skipText}>Skip for now</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -206,165 +124,118 @@ export default function SignUpScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.backgroundWhite,
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingBottom: 40,
-  },
-  backButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    marginTop: 8,
+    backgroundColor: '#FFFFFF',
   },
   header: {
-    marginTop: 24,
-    marginBottom: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingBottom: 20,
+    gap: 16,
+  },
+  backButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  progressContainer: {
+    flex: 1,
+    height: 4,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#000000',
+    borderRadius: 2,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 40,
   },
   title: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '700' as const,
-    color: Colors.text,
-    marginBottom: 8,
+    color: '#000000',
+    marginBottom: 12,
   },
-  subtitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-  },
-  form: {
-    gap: 20,
-    marginBottom: 32,
-  },
-  inputGroup: {
-    gap: 8,
-  },
-  label: {
-    fontSize: 12,
-    fontWeight: '500' as const,
-    color: Colors.text,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  input: {
-    height: 52,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    color: Colors.text,
-    backgroundColor: Colors.backgroundWhite,
-  },
-  inputError: {
-    borderColor: Colors.danger,
-  },
-  errorText: {
-    fontSize: 12,
-    color: Colors.danger,
-    marginTop: 4,
-  },
-  passwordContainer: {
-    position: 'relative',
-  },
-  passwordInput: {
-    paddingRight: 50,
-  },
-  eyeButton: {
-    position: 'absolute',
-    right: 16,
-    top: 16,
-  },
-  buttonSection: {
+  footer: {
+    paddingHorizontal: 24,
     gap: 12,
-    marginTop: 'auto',
   },
   errorBox: {
     backgroundColor: '#FEE2E2',
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.danger,
+    marginBottom: 4,
   },
-  errorBoxText: {
+  errorText: {
     color: '#991B1B',
     fontSize: 14,
-    lineHeight: 20,
+    textAlign: 'center',
   },
-  primaryButton: {
-    backgroundColor: Colors.primary,
-    height: 52,
-    borderRadius: 12,
-    justifyContent: 'center',
+  appleButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000000',
+    height: 56,
+    borderRadius: 28,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  primaryButtonDisabled: {
-    opacity: 0.6,
+  appleIcon: {
+    fontSize: 22,
   },
-  primaryButtonText: {
-    color: Colors.white,
+  appleButtonText: {
+    color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '600' as const,
   },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 8,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: Colors.border,
-  },
-  dividerText: {
-    marginHorizontal: 16,
-    fontSize: 14,
-    color: Colors.textTertiary,
-    fontWeight: '500' as const,
+  buttonDisabled: {
+    opacity: 0.5,
   },
   googleButton: {
-    height: 52,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    justifyContent: 'center',
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.backgroundWhite,
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  googleButtonDisabled: {
-    opacity: 0.6,
+  googleIcon: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: '#4285F4',
   },
   googleButtonText: {
-    color: Colors.text,
+    color: '#000000',
     fontSize: 17,
-    fontWeight: '600' as const,
+    fontWeight: '500' as const,
   },
-  signupPrompt: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+  skipLink: {
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 16,
   },
-  signupPromptText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-  },
-  signupLink: {
-    fontSize: 14,
-    color: Colors.primary,
-    fontWeight: '600' as const,
-  },
-  skipButton: {
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  skipButtonText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
+  skipText: {
+    fontSize: 15,
+    color: '#999999',
   },
 });

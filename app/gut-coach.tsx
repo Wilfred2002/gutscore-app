@@ -48,10 +48,18 @@ export default function GutCoachScreen() {
 
         try {
             // Build user context for personalized responses
+            // Generate symptom types from the new model
+            const symptomDescriptions: string[] = [];
+            symptoms.forEach(s => {
+                if (s.bloat >= 3) symptomDescriptions.push('bloating');
+                if (s.pain >= 3) symptomDescriptions.push('pain');
+                if (s.energy <= 2) symptomDescriptions.push('low energy');
+            });
+
             const userContext = {
                 triggers: triggers.map(t => t.name),
                 recentMeals: meals.slice(0, 5).map(m => m.foods.map(f => f.name).join(', ')),
-                symptomTypes: [...new Set(symptoms.flatMap(s => s.types))],
+                symptomTypes: [...new Set(symptomDescriptions)],
             };
 
             const response = await chatWithGutCoach(userMessage.content, userContext);

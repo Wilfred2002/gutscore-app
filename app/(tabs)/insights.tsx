@@ -64,15 +64,19 @@ export default function InsightsScreen() {
     return uniqueFoods.size;
   }, [meals]);
 
-  // Calculate symptom frequency
+  // Calculate symptom frequency based on new model
   const symptomFrequency = useMemo(() => {
-    const freq: Record<string, number> = {};
+    const counts = { bloat: 0, pain: 0, lowEnergy: 0 };
     symptoms.forEach(s => {
-      s.types.forEach(type => {
-        freq[type] = (freq[type] || 0) + 1;
-      });
+      if (s.bloat >= 3) counts.bloat++;
+      if (s.pain >= 3) counts.pain++;
+      if (s.energy <= 2) counts.lowEnergy++;
     });
-    return Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 4);
+    return [
+      ['Bloating', counts.bloat],
+      ['Pain', counts.pain],
+      ['Low Energy', counts.lowEnergy],
+    ].filter(([, count]) => (count as number) > 0).sort((a, b) => (b[1] as number) - (a[1] as number));
   }, [symptoms]);
 
   const avgScore = weeklyScores.length > 0

@@ -5,6 +5,16 @@ import createContextHook from '@nkzw/create-context-hook';
 import { User, Meal, Symptom, OnboardingState } from '@/types';
 import { supabase } from '@/lib/supabase';
 import type { Session } from '@supabase/supabase-js';
+import {
+  getMeals as getSQLiteMeals,
+  insertMeal as insertSQLiteMeal,
+  deleteMeal as deleteSQLiteMeal,
+  getSymptoms as getSQLiteSymptoms,
+  insertSymptom as insertSQLiteSymptom,
+  openDatabase
+} from '@/lib/database';
+import { saveMealImage, deleteMealImage } from '@/lib/imageStorage';
+import * as FileSystem from 'expo-file-system';
 
 // Initialize the browser for OAuth
 WebBrowser.maybeCompleteAuthSession();
@@ -82,7 +92,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
     if (!session?.user) return;
 
     try {
-      // Fetch user profile from Supabase
+      // Initialize SQLite database
+      await openDatabase();
+
+      // Fetch user profile from Supabase (auth only)
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('*')
@@ -92,7 +105,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
       if (userError) throw userError;
 
       if (userData) {
-        // Convert Supabase user to app User type
         setUser({
           id: userData.id,
           email: userData.email,
@@ -103,49 +115,13 @@ export const [AppProvider, useApp] = createContextHook(() => {
         });
       }
 
-      // Fetch meals from Supabase
-      const { data: mealsData, error: mealsError } = await supabase
-        .from('meals')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .order('logged_at', { ascending: false })
-        .limit(50);
+      // Fetch meals from LOCAL SQLite (not Supabase!)
+      const localMeals = await getSQLiteMeals(session.user.id);
+      setMeals(localMeals);
 
-      if (mealsError) throw mealsError;
-
-      if (mealsData) {
-        setMeals(mealsData.map((m: any) => ({
-          id: m.id,
-          foods: m.foods,
-          timestamp: new Date(m.logged_at),
-          score: m.overall_score,
-          imageUri: m.photo_url,
-          gutScores: m.gut_scores,
-          notes: m.notes,
-        })));
-      }
-
-      // Fetch symptoms from Supabase
-      const { data: symptomsData, error: symptomsError } = await supabase
-        .from('symptoms')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .order('logged_at', { ascending: false })
-        .limit(50);
-
-      if (symptomsError) throw symptomsError;
-
-      if (symptomsData) {
-        setSymptoms(symptomsData.map((s: any) => ({
-          id: s.id,
-          mealId: s.meal_id,
-          timestamp: new Date(s.logged_at),
-          bloating: s.bloating,
-          cramping: s.cramping,
-          energy: s.energy,
-          notes: s.notes,
-        })));
-      }
+      // Fetch symptoms from LOCAL SQLite
+      const localSymptoms = await getSQLiteSymptoms(session.user.id);
+      setSymptoms(localSymptoms);
     } catch (error) {
       console.log('Error loading user data:', error);
     }
@@ -256,25 +232,28 @@ export const [AppProvider, useApp] = createContextHook(() => {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('meals')
-        .insert({
-          user_id: session.user.id,
-          foods: meal.foods,
-          gut_scores: meal.gutScores,
-          overall_score: meal.score,
-          photo_url: meal.imageUri,
-          notes: meal.notes,
-          is_sample: false,
-          logged_at: meal.timestamp.toISOString(),
-        })
-        .select()
-        .single();
+      // Save image locally first
+      let localImagePath = meal.imageUri;
+      // @ts-ignore - documentDirectory exists at runtime in expo-file-system
+      const docsDir = FileSystem.documentDirectory || '';
+      if (meal.imageUri && !meal.imageUri.startsWith(docsDir)) {
+        try {
+          localImagePath = await saveMealImage(meal.imageUri, session.user.id);
+        } catch (imgError) {
+          console.warn('Failed to save image locally, using original URI');
+        }
+      }
 
-      if (error) throw error;
+      // Insert into LOCAL SQLite
+      await insertSQLiteMeal({
+        ...meal,
+        imageUri: localImagePath,
+        userId: session.user.id,
+      });
 
-      // Update local state
-      setMeals([meal, ...meals]);
+      // Update local state with local image path
+      const mealWithLocalPath = { ...meal, imageUri: localImagePath };
+      setMeals([mealWithLocalPath, ...meals]);
 
       if (!onboarding.checklistItems.scannedFirstMeal) {
         await updateOnboarding({
@@ -289,22 +268,25 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
   const savePendingMeal = async (userId: string, meal: Meal) => {
     try {
-      const { error } = await supabase
-        .from('meals')
-        .insert({
-          user_id: userId,
-          foods: meal.foods,
-          gut_scores: meal.gutScores,
-          overall_score: meal.score,
-          photo_url: meal.imageUri,
-          notes: meal.notes,
-          is_sample: false,
-          logged_at: meal.timestamp.toISOString(),
-        });
+      // Save image locally
+      let localImagePath = meal.imageUri;
+      if (meal.imageUri) {
+        try {
+          localImagePath = await saveMealImage(meal.imageUri, userId);
+        } catch (imgError) {
+          console.warn('Failed to save pending meal image');
+        }
+      }
 
-      if (error) throw error;
+      // Insert into SQLite
+      await insertSQLiteMeal({
+        ...meal,
+        imageUri: localImagePath,
+        userId,
+      });
+
       setPendingMeal(null);
-      await loadUserData(); // Reload to ensure sync
+      await loadUserData();
     } catch (error) {
       console.error('Error saving pending meal:', error);
     }
@@ -327,19 +309,11 @@ export const [AppProvider, useApp] = createContextHook(() => {
     }
 
     try {
-      const { error } = await supabase
-        .from('symptoms')
-        .insert({
-          user_id: session.user.id,
-          associated_meal_id: symptom.associatedMealId,
-          types: symptom.types,
-          intensity: symptom.intensity,
-          meal_association: symptom.mealAssociation,
-          notes: symptom.notes,
-          logged_at: symptom.timestamp.toISOString(),
-        });
-
-      if (error) throw error;
+      // Insert into LOCAL SQLite
+      await insertSQLiteSymptom({
+        ...symptom,
+        userId: session.user.id,
+      });
 
       if (!onboarding.checklistItems.loggedSymptom) {
         await updateOnboarding({
@@ -356,13 +330,16 @@ export const [AppProvider, useApp] = createContextHook(() => {
     if (!session?.user) return;
 
     try {
-      const { error } = await supabase
-        .from('meals')
-        .delete()
-        .eq('id', mealId)
-        .eq('user_id', session.user.id);
+      // Find the meal to get its image path
+      const mealToDelete = meals.find(m => m.id === mealId);
 
-      if (error) throw error;
+      // Delete from SQLite
+      await deleteSQLiteMeal(mealId);
+
+      // Delete associated image file
+      if (mealToDelete?.imageUri) {
+        await deleteMealImage(mealToDelete.imageUri);
+      }
 
       // Update local state
       setMeals(meals.filter(m => m.id !== mealId));

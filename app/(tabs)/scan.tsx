@@ -1,14 +1,19 @@
 import { useState, useRef, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Platform, Animated, Alert } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Platform, Animated, Alert, Image, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
-import { X, Zap, Image as ImageIcon, Settings, Repeat } from 'lucide-react-native';
+import { X, Zap, Image as ImageIcon, Repeat, Check, RefreshCw } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Colors from '@/constants/colors';
 import { analyzeFoodImage } from '@/lib/openai';
+
+interface CapturedPhoto {
+  uri: string;
+  base64: string;
+}
 
 export default function ScanScreen() {
   const router = useRouter();
@@ -19,10 +24,12 @@ export default function ScanScreen() {
   const [facing, setFacing] = useState<'back' | 'front'>('back');
   const [flash, setFlash] = useState<'off' | 'on'>('off');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [capturedPhoto, setCapturedPhoto] = useState<CapturedPhoto | null>(null);
   const cameraRef = useRef<CameraView>(null);
 
   const flashAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const spinAnim = useRef(new Animated.Value(0)).current;
 
   // Request permissions on mount
   useEffect(() => {
@@ -30,6 +37,21 @@ export default function ScanScreen() {
       requestPermission();
     }
   }, [permission, requestPermission]);
+
+  // Spin animation for loading
+  useEffect(() => {
+    if (isAnalyzing) {
+      Animated.loop(
+        Animated.timing(spinAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        })
+      ).start();
+    } else {
+      spinAnim.setValue(0);
+    }
+  }, [isAnalyzing, spinAnim]);
 
   const animateCapture = () => {
     Animated.sequence([
@@ -46,30 +68,8 @@ export default function ScanScreen() {
     ]).start();
   };
 
-  const startPulse = () => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.1,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  };
-
-  const processImage = async (base64: string | undefined | null, uri: string) => {
-    if (!base64) {
-      Alert.alert('Error', 'Could not process image data');
-      setIsAnalyzing(false);
-      pulseAnim.setValue(1);
-      return;
-    }
+  const processImage = async (base64: string, uri: string) => {
+    setIsAnalyzing(true);
 
     try {
       const result = await analyzeFoodImage(base64);
@@ -92,21 +92,18 @@ export default function ScanScreen() {
       Alert.alert('Analysis Failed', 'Could not analyze the image. Please try again.');
     } finally {
       setIsAnalyzing(false);
-      pulseAnim.setValue(1);
+      setCapturedPhoto(null);
     }
   };
 
   const handleCapture = async () => {
     if (!cameraRef.current) return;
-    if (isAnalyzing) return;
 
     if (Platform.OS !== 'web') {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
 
     animateCapture();
-    setIsAnalyzing(true);
-    startPulse();
 
     try {
       const photo = await cameraRef.current.takePictureAsync({
@@ -115,15 +112,33 @@ export default function ScanScreen() {
         skipProcessing: true,
       });
 
-      if (photo) {
-        await processImage(photo.base64, photo.uri);
+      if (photo && photo.base64) {
+        // Show preview instead of immediately analyzing
+        setCapturedPhoto({
+          uri: photo.uri,
+          base64: photo.base64,
+        });
       }
     } catch (error) {
       console.error('Camera capture failed:', error);
-      setIsAnalyzing(false);
-      pulseAnim.setValue(1);
       Alert.alert('Error', 'Failed to take photo');
     }
+  };
+
+  const handleConfirmPhoto = () => {
+    if (capturedPhoto) {
+      if (Platform.OS !== 'web') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+      processImage(capturedPhoto.base64, capturedPhoto.uri);
+    }
+  };
+
+  const handleRetakePhoto = () => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setCapturedPhoto(null);
   };
 
   const handlePickImage = async () => {
@@ -135,10 +150,12 @@ export default function ScanScreen() {
       base64: true,
     });
 
-    if (!result.canceled && result.assets[0]) {
-      setIsAnalyzing(true);
-      startPulse();
-      await processImage(result.assets[0].base64, result.assets[0].uri);
+    if (!result.canceled && result.assets[0] && result.assets[0].base64) {
+      // Show preview for picked images too
+      setCapturedPhoto({
+        uri: result.assets[0].uri,
+        base64: result.assets[0].base64,
+      });
     }
   };
 
@@ -153,13 +170,16 @@ export default function ScanScreen() {
     setFacing(current => (current === 'back' ? 'front' : 'back'));
   };
 
+  const spin = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
   if (!permission) {
-    // Camera permissions are still loading.
     return <View style={styles.container} />;
   }
 
   if (!permission.granted) {
-    // Camera permissions are not granted yet.
     return (
       <View style={[styles.container, styles.permissionContainer]}>
         <Text style={styles.permissionText}>We need your permission to show the camera</Text>
@@ -173,12 +193,74 @@ export default function ScanScreen() {
     );
   }
 
+  // Photo Preview Screen
+  if (capturedPhoto) {
+    return (
+      <View style={styles.container}>
+        <Image source={{ uri: capturedPhoto.uri }} style={styles.previewImage} />
+
+        {/* Top overlay with close button */}
+        <LinearGradient
+          colors={['rgba(0,0,0,0.6)', 'transparent']}
+          style={[styles.topOverlay, { paddingTop: insets.top }]}
+        >
+          <TouchableOpacity
+            style={styles.topButton}
+            onPress={handleRetakePhoto}
+            disabled={isAnalyzing}
+          >
+            <X size={24} color={Colors.white} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Preview</Text>
+          <View style={{ width: 44 }} />
+        </LinearGradient>
+
+        {/* Bottom overlay with confirm/retake buttons */}
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.8)']}
+          style={[styles.previewBottomOverlay, { paddingBottom: insets.bottom + 20 }]}
+        >
+          {isAnalyzing ? (
+            <View style={styles.analyzingContainer}>
+              <Animated.View style={[styles.spinnerCircle, { transform: [{ rotate: spin }] }]} />
+              <Text style={styles.analyzingText}>Analyzing your meal...</Text>
+              <Text style={styles.analyzingSubtext}>This may take a few seconds</Text>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.previewPrompt}>Does this look good?</Text>
+              <View style={styles.previewButtons}>
+                <TouchableOpacity
+                  style={styles.retakeButton}
+                  onPress={handleRetakePhoto}
+                >
+                  <RefreshCw size={24} color={Colors.white} />
+                  <Text style={styles.retakeButtonText}>Retake</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.confirmButton}
+                  onPress={handleConfirmPhoto}
+                >
+                  <Check size={24} color={Colors.white} />
+                  <Text style={styles.confirmButtonText}>Analyze</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </LinearGradient>
+      </View>
+    );
+  }
+
+  // Camera View
   return (
     <View style={styles.container}>
       <CameraView
         style={styles.camera}
         facing={facing}
         flash={flash}
+        zoom={0}
         ref={cameraRef}
       >
         <LinearGradient
@@ -224,16 +306,13 @@ export default function ScanScreen() {
               <ImageIcon size={24} color={Colors.white} />
             </TouchableOpacity>
 
-            <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-              <TouchableOpacity
-                style={styles.captureButton}
-                onPress={handleCapture}
-                activeOpacity={0.8}
-                disabled={isAnalyzing}
-              >
-                <View style={styles.captureInner} />
-              </TouchableOpacity>
-            </Animated.View>
+            <TouchableOpacity
+              style={styles.captureButton}
+              onPress={handleCapture}
+              activeOpacity={0.8}
+            >
+              <View style={styles.captureInner} />
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.sideButton}
@@ -243,15 +322,6 @@ export default function ScanScreen() {
             </TouchableOpacity>
           </View>
         </LinearGradient>
-
-        {isAnalyzing && (
-          <View style={styles.analyzingOverlay}>
-            <View style={styles.analyzingContent}>
-              <Animated.View style={[styles.spinner, { transform: [{ scale: pulseAnim }] }]} />
-              <Text style={styles.analyzingText}>Analyzing your meal...</Text>
-            </View>
-          </View>
-        )}
 
         <Animated.View
           style={[
@@ -430,20 +500,75 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     zIndex: 100,
   },
-  analyzingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.8)',
+  // Preview styles
+  previewImage: {
+    flex: 1,
+    resizeMode: 'cover',
+  },
+  previewBottomOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingTop: 30,
+    paddingHorizontal: 20,
+    zIndex: 10,
+  },
+  previewPrompt: {
+    color: Colors.white,
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 20,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  previewButtons: {
+    flexDirection: 'row',
     justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 50,
+    gap: 16,
   },
-  analyzingContent: {
+  retakeButton: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingVertical: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
-  spinner: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+  retakeButtonText: {
+    color: Colors.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.primary,
+    paddingVertical: 16,
+    borderRadius: 12,
+  },
+  confirmButtonText: {
+    color: Colors.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  analyzingContainer: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  spinnerCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     borderWidth: 3,
     borderColor: Colors.primary,
     borderTopColor: 'transparent',
@@ -451,7 +576,12 @@ const styles = StyleSheet.create({
   },
   analyzingText: {
     color: Colors.white,
-    fontSize: 16,
-    fontWeight: '500' as const,
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  analyzingSubtext: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 14,
   },
 });

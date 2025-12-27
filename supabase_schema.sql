@@ -195,3 +195,45 @@ begin
 exception
   when others then null;
 end $$;
+
+-- ==========================================
+-- Phase 6: Simplified Symptoms & Food Lists
+-- ==========================================
+
+-- Add simplified symptom columns (bloat, pain already has energy)
+do $$ 
+begin
+  alter table public.symptoms add column if not exists bloat integer default 0;
+  alter table public.symptoms add column if not exists pain integer default 0;
+exception
+  when others then null;
+end $$;
+
+-- Food Lists Table (Safe / Limit / Avoid)
+create table if not exists public.food_lists (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.users(id) on delete cascade not null,
+  food_name text not null,
+  category text check (category in ('safe', 'limit', 'avoid')) not null,
+  source text check (source in ('ai', 'manual', 'trigger_engine')) default 'manual',
+  confidence integer default 0,
+  last_eaten timestamp with time zone,
+  created_at timestamp with time zone default now(),
+  updated_at timestamp with time zone default now(),
+  unique(user_id, food_name)
+);
+
+-- Enable RLS on Food Lists
+alter table public.food_lists enable row level security;
+
+-- Drop existing policies
+drop policy if exists "Users can view own food lists" on public.food_lists;
+drop policy if exists "Users can insert own food lists" on public.food_lists;
+drop policy if exists "Users can update own food lists" on public.food_lists;
+drop policy if exists "Users can delete own food lists" on public.food_lists;
+
+-- Re-create policies
+create policy "Users can view own food lists" on public.food_lists for select using (auth.uid() = user_id);
+create policy "Users can insert own food lists" on public.food_lists for insert with check (auth.uid() = user_id);
+create policy "Users can update own food lists" on public.food_lists for update using (auth.uid() = user_id);
+create policy "Users can delete own food lists" on public.food_lists for delete using (auth.uid() = user_id);
