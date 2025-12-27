@@ -12,9 +12,31 @@ const queryClient = new QueryClient();
 
 function RootLayoutNav() {
   return (
-    <Stack screenOptions={{ headerBackTitle: "Back" }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+    <Stack
+      screenOptions={{
+        headerBackTitle: "Back",
+        headerShown: false,
+      }}
+    >
+      <Stack.Screen
+        name="(tabs)"
+        options={{
+          headerShown: false,
+          // Prevent tab bar from rendering in background
+          animation: 'none',
+          // Force unmount when not visible
+          unmountOnBlur: true,
+        }}
+      />
+      <Stack.Screen
+        name="onboarding"
+        options={{
+          headerShown: false,
+          // Ensure onboarding fully covers tabs
+          presentation: 'card',
+          animation: 'none',
+        }}
+      />
       <Stack.Screen
         name="scan-results"
         options={{

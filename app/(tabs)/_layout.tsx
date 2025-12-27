@@ -12,6 +12,7 @@ export default function TabLayout() {
   }
 
   // Redirect to onboarding if not authenticated
+  // IMPORTANT: Don't render Tabs component at all to prevent TabBar from blocking touches
   if (!session?.user) {
     return <Redirect href="/onboarding" />;
   }
@@ -28,6 +29,8 @@ export default function TabLayout() {
           height: 85,
           paddingBottom: 28,
           paddingTop: 8,
+          // Ensure tab bar doesn't interfere when not visible
+          position: 'absolute',
         },
         tabBarLabelStyle: {
           fontSize: 11,

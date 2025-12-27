@@ -8,7 +8,7 @@ export default function ThankYouScreen() {
   const insets = useSafeAreaInsets();
 
   const handleContinue = () => {
-    router.push('/onboarding/notification-permission');
+    router.push('/onboarding/personalizing');
   };
 
   const handleBack = () => {
@@ -23,26 +23,19 @@ export default function ThankYouScreen() {
           <ArrowLeft size={24} color="#000000" />
         </TouchableOpacity>
         <View style={styles.progressContainer}>
-          <View style={[styles.progressBar, { width: '75%' }]} />
+          <View style={[styles.progressBar, { width: '100%' }]} />
         </View>
       </View>
 
       {/* Content */}
       <View style={styles.content}>
-        <View style={styles.iconContainer}>
-          <View style={styles.gradientCircle}>
-            <Text style={styles.handEmoji}>👋</Text>
-          </View>
-        </View>
-
         <Text style={styles.title}>Thank you for{'\n'}trusting us</Text>
-        <Text style={styles.subtitle}>Now let's personalize GutScore for you...</Text>
 
         <View style={styles.privacyCard}>
           <Text style={styles.lockEmoji}>🔒</Text>
-          <Text style={styles.privacyTitle}>Your privacy and security matter to us.</Text>
+          <Text style={styles.privacyTitle}>Your privacy and security matter to us</Text>
           <Text style={styles.privacyText}>
-            We promise to always keep your personal information private and secure.
+            We promise to always keep your personal information private and secure. Your gut health data belongs to you.
           </Text>
         </View>
       </View>
@@ -96,22 +89,8 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 24,
-    paddingTop: 40,
+    paddingTop: 80,
     alignItems: 'center',
-  },
-  iconContainer: {
-    marginBottom: 40,
-  },
-  gradientCircle: {
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: '#F5F5F5',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  handEmoji: {
-    fontSize: 80,
   },
   title: {
     fontSize: 36,
@@ -119,36 +98,31 @@ const styles = StyleSheet.create({
     color: '#000000',
     textAlign: 'center',
     lineHeight: 42,
-    marginBottom: 12,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#666666',
-    textAlign: 'center',
-    marginBottom: 40,
+    marginBottom: 48,
   },
   privacyCard: {
     backgroundColor: '#F5F5F5',
-    borderRadius: 16,
-    padding: 24,
+    borderRadius: 20,
+    padding: 32,
     alignItems: 'center',
-    gap: 12,
+    gap: 16,
+    width: '100%',
   },
   lockEmoji: {
-    fontSize: 32,
-    marginBottom: 8,
+    fontSize: 48,
+    marginBottom: 4,
   },
   privacyTitle: {
-    fontSize: 17,
-    fontWeight: '600' as const,
+    fontSize: 20,
+    fontWeight: '700' as const,
     color: '#000000',
     textAlign: 'center',
   },
   privacyText: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#666666',
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 22,
   },
   footer: {
     paddingHorizontal: 24,

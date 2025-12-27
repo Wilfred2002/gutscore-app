@@ -3,13 +3,14 @@ import { StyleSheet, Text, View, TouchableOpacity, TextInput, KeyboardAvoidingVi
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Eye, EyeOff, ArrowLeft } from 'lucide-react-native';
+import { AntDesign, Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { signIn, signInWithGoogle } = useApp();
+  const { signIn, signInWithGoogle, completeOnboarding } = useApp();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -46,7 +47,8 @@ export default function LoginScreen() {
         return;
       }
 
-      // Successful login - navigate to main app
+      // Complete onboarding and navigate to main app
+      await completeOnboarding();
       setIsLoading(false);
       router.replace('/(tabs)');
     } catch (error: any) {
@@ -73,7 +75,8 @@ export default function LoginScreen() {
         return;
       }
 
-      // Successful login - navigate to main app
+      // Complete onboarding and navigate to main app
+      await completeOnboarding();
       setIsLoading(false);
       router.replace('/(tabs)');
     } catch (error: any) {
@@ -186,7 +189,18 @@ export default function LoginScreen() {
               activeOpacity={0.8}
               disabled={isLoading}
             >
+              <AntDesign name="google" size={20} color="#4285F4" style={styles.buttonIcon} />
               <Text style={styles.googleButtonText}>Continue with Google</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.appleButton, isLoading && styles.appleButtonDisabled]}
+              onPress={() => {}} // TODO: Implement Apple Sign In
+              activeOpacity={0.8}
+              disabled={true}
+            >
+              <Ionicons name="logo-apple" size={20} color="#000000" style={styles.buttonIcon} />
+              <Text style={styles.appleButtonText}>Continue with Apple</Text>
             </TouchableOpacity>
 
             <View style={styles.signupPrompt}>
@@ -353,6 +367,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.backgroundWhite,
     height: 52,
     borderRadius: 12,
+    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
@@ -365,5 +380,28 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontSize: 17,
     fontWeight: '600' as const,
+    marginLeft: 8,
+  },
+  appleButton: {
+    backgroundColor: Colors.backgroundWhite,
+    height: 52,
+    borderRadius: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  appleButtonDisabled: {
+    opacity: 0.6,
+  },
+  appleButtonText: {
+    color: Colors.text,
+    fontSize: 17,
+    fontWeight: '600' as const,
+    marginLeft: 8,
+  },
+  buttonIcon: {
+    marginRight: 8,
   },
 });

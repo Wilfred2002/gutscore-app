@@ -1,10 +1,11 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, Fragment } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Animated, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
+import ContinueButton from '@/components/ContinueButton';
 
 // Question types
 type QuestionType = 'yesno' | 'single' | 'multi' | 'info';
@@ -70,8 +71,8 @@ const QUESTIONS: Question[] = [
   {
     id: 'info_value',
     type: 'info',
-    title: 'GutScore learns what works for you',
-    subtitle: 'Our AI analyzes your meals and symptoms to find patterns unique to your gut—no generic advice, just what actually helps you feel better.',
+    title: 'GutScore helps you reach your goals',
+    subtitle: 'Our AI analyzes your meals to help you make better choices. We can tell you if foods cause bloating, support weight loss, or align with your dietary needs like IBS-friendly, lactose-free, or low FODMAP.',
   },
   {
     id: 'age_range',
@@ -171,38 +172,41 @@ export default function OnboardingQuestions() {
   };
 
   const handleContinue = () => {
-    if (currentQuestion.type === 'yesno' && yesNoSelection !== null) {
-      setAnswers({ ...answers, [currentQuestion.id]: yesNoSelection });
-    } else if (currentQuestion.type === 'single') {
-      setAnswers({ ...answers, [currentQuestion.id]: selectedOptions[0] });
-    } else if (currentQuestion.type === 'multi') {
-      setAnswers({ ...answers, [currentQuestion.id]: selectedOptions });
-    }
-    goToNext();
-  };
+    // Save the answer first
+    let updatedAnswers = { ...answers };
 
-  const goToNext = () => {
+    if (currentQuestion.type === 'yesno' && yesNoSelection !== null) {
+      updatedAnswers[currentQuestion.id] = yesNoSelection;
+    } else if (currentQuestion.type === 'single') {
+      updatedAnswers[currentQuestion.id] = selectedOptions[0];
+    } else if (currentQuestion.type === 'multi') {
+      updatedAnswers[currentQuestion.id] = selectedOptions;
+    }
+
+    setAnswers(updatedAnswers);
+
+    // Then advance to next step
     if (currentStep < totalSteps - 1) {
       setCurrentStep(currentStep + 1);
       setSelectedOptions([]);
       setYesNoSelection(null);
     } else {
       // Onboarding questions complete - save and continue to thank you screen
-      saveAnswersAndContinue();
+      saveAnswersAndContinue(updatedAnswers);
     }
   };
 
-  const saveAnswersAndContinue = async () => {
+  const saveAnswersAndContinue = async (finalAnswers = answers) => {
     await updateOnboarding({
       quizAnswers: {
-        gutConcern: answers.main_concern,
-        symptomFrequency: answers.symptom_frequency,
-        dietaryRestrictions: answers.dietary || [],
-        ageRange: answers.age_range,
-        hasCoach: answers.has_coach,
-        mainGoal: answers.main_goal,
-        barriers: answers.barriers,
-        triedOtherApps: answers.tried_apps,
+        gutConcern: finalAnswers.main_concern,
+        symptomFrequency: finalAnswers.symptom_frequency,
+        dietaryRestrictions: finalAnswers.dietary || [],
+        ageRange: finalAnswers.age_range,
+        hasCoach: finalAnswers.has_coach,
+        mainGoal: finalAnswers.main_goal,
+        barriers: finalAnswers.barriers,
+        triedOtherApps: finalAnswers.tried_apps,
       },
     });
     router.push('/onboarding/thank-you');
@@ -266,64 +270,59 @@ export default function OnboardingQuestions() {
 
   const renderInfo = () => (
     <View style={styles.infoContainer}>
-      <View style={styles.infoCircle}>
-        <Text style={styles.infoEmoji}>✨</Text>
-      </View>
       <Text style={styles.infoSubtitle}>{currentQuestion.subtitle}</Text>
     </View>
   );
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + 20 }]}>
-      {/* Header with back button and progress */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-          <ArrowLeft size={24} color="#000000" />
-        </TouchableOpacity>
-        <View style={styles.progressContainer}>
-          <Animated.View
-            style={[
-              styles.progressBar,
-              {
-                width: progressAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ['0%', '100%'],
-                }),
-              },
-            ]}
-          />
+    <Fragment>
+      <View style={[styles.container, { paddingTop: insets.top + 20 }]}>
+        {/* Header with back button and progress */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+            <ArrowLeft size={24} color="#000000" />
+          </TouchableOpacity>
+          <View style={styles.progressContainer}>
+            <Animated.View
+              style={[
+                styles.progressBar,
+                {
+                  width: progressAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0%', '100%'],
+                  }),
+                },
+              ]}
+            />
+          </View>
         </View>
-      </View>
 
-      {/* Question */}
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={styles.contentContainer}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={styles.title}>{currentQuestion.title}</Text>
-        {currentQuestion.subtitle && currentQuestion.type !== 'info' && (
-          <Text style={styles.subtitle}>{currentQuestion.subtitle}</Text>
-        )}
-
-        {/* Render based on question type */}
-        {currentQuestion.type === 'yesno' && renderYesNo()}
-        {(currentQuestion.type === 'single' || currentQuestion.type === 'multi') && renderOptions()}
-        {currentQuestion.type === 'info' && renderInfo()}
-      </ScrollView>
-
-      {/* Continue button for all question types */}
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 20 }]}>
-        <TouchableOpacity
-          style={[styles.continueButton, !canContinue() && styles.continueButtonDisabled]}
-          onPress={handleContinue}
-          disabled={!canContinue()}
-          activeOpacity={0.8}
+        {/* Scrollable content area */}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.continueButtonText}>Continue</Text>
-        </TouchableOpacity>
+          <Text style={styles.title}>{currentQuestion.title}</Text>
+          {currentQuestion.subtitle && currentQuestion.type !== 'info' && (
+            <Text style={styles.subtitle}>{currentQuestion.subtitle}</Text>
+          )}
+
+          {/* Render based on question type */}
+          {currentQuestion.type === 'yesno' && renderYesNo()}
+          {(currentQuestion.type === 'single' || currentQuestion.type === 'multi') && renderOptions()}
+          {currentQuestion.type === 'info' && renderInfo()}
+        </ScrollView>
       </View>
-    </View>
+
+      {/* Continue button - rendered OUTSIDE main container */}
+      <ContinueButton
+        onPress={handleContinue}
+        text="Continue"
+        disabled={!canContinue()}
+      />
+    </Fragment>
   );
 }
 
@@ -359,12 +358,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
     borderRadius: 2,
   },
-  content: {
-    flex: 1,
-  },
   contentContainer: {
     paddingHorizontal: 24,
-    paddingBottom: 20,
+    paddingBottom: 100,
   },
   title: {
     fontSize: 32,
@@ -456,49 +452,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 60,
-    gap: 32,
-  },
-  infoCircle: {
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: '#F5F5F5',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  infoEmoji: {
-    fontSize: 80,
+    paddingHorizontal: 20,
   },
   infoSubtitle: {
     fontSize: 16,
     color: '#666666',
     textAlign: 'center',
     lineHeight: 24,
-    paddingHorizontal: 20,
-  },
-  // Footer
-  footer: {
-    paddingHorizontal: 24,
-    paddingTop: 16,
-  },
-  continueButton: {
-    backgroundColor: '#000000',
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  continueButtonDisabled: {
-    opacity: 0.4,
-  },
-  continueButtonText: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '600' as const,
   },
 });
