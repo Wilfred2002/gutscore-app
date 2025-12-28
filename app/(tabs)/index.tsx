@@ -1,152 +1,110 @@
-import { useEffect, useState, useMemo } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { useEffect, useMemo } from 'react';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import { Clock, TrendingUp, Camera, ChevronRight, AlertTriangle, Shield, Ban, AlertCircle } from 'lucide-react-native';
+import { Camera, ChevronRight } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
-import { Meal, Trigger } from '@/types';
+import { Meal, UserGoal } from '@/types';
 import { analyzeTriggers } from '@/lib/trigger-engine';
 
-// Gut Risk Forecast calculation
-type RiskLevel = 'low' | 'medium' | 'high';
+// Today's Focus interfaces
+interface TodaysFocusData {
+  lines: { label: string; value: string; highlight?: boolean }[];
+  tip: string;
+}
 
-interface GutRiskForecast {
-  level: RiskLevel;
-  emoji: string;
-  color: string;
-  message: string;
+interface DailyStats {
+  mealsLogged: number;
+  calories: number;
+  protein: number;
+  riskLevel: 'Low' | 'Medium' | 'High';
+  highRiskFoods: string[];
 }
 
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, meals, symptoms, onboarding, isLoading, getWeeklyStats, getTodaysMeals } = useApp();
-  const [refreshing, setRefreshing] = useState(false);
-  const [triggers, setTriggers] = useState<Trigger[]>([]);
+  const { user, meals, symptoms, onboarding, isLoading, getTodaysMeals } = useApp();
 
-  const weeklyStats = getWeeklyStats();
   const todaysMeals = getTodaysMeals();
 
-  // Run trigger analysis when data changes
-  useEffect(() => {
-    const detectedTriggers = analyzeTriggers(meals, symptoms);
-    setTriggers(detectedTriggers);
-  }, [meals, symptoms]);
-
+  // Redirect to onboarding if not completed
   useEffect(() => {
     if (!isLoading && !onboarding.completed) {
       router.replace('/onboarding');
     }
   }, [isLoading, onboarding.completed, router]);
 
-  // Calculate Gut Risk Forecast
-  const gutRiskForecast = useMemo((): GutRiskForecast => {
-    // Check recent symptoms (last 24 hours)
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const recentSymptoms = symptoms.filter(s => new Date(s.timestamp) >= oneDayAgo);
+  // Calculate daily stats
+  const dailyStats = useMemo((): DailyStats => {
+    const calories = todaysMeals.reduce((sum, m) => sum + (m.calories || 0), 0);
+    const protein = todaysMeals.reduce((sum, m) => sum + (m.protein || 0), 0);
 
-    // Calculate symptom severity
-    const avgSeverity = recentSymptoms.length > 0
-      ? recentSymptoms.reduce((sum, s) => sum + Math.max(s.bloat, s.pain) + (5 - s.energy), 0) / recentSymptoms.length
+    // Calculate risk level based on FODMAP scores
+    const avgFodmap = todaysMeals.length > 0
+      ? todaysMeals.reduce((sum, m) => sum + (m.gutScores?.fodmap || 0), 0) / todaysMeals.length
       : 0;
 
-    // Check if any trigger foods were eaten recently
-    const recentMealFoods = todaysMeals.flatMap(m => m.foods.map(f => f.name.toLowerCase()));
-    const triggersEatenToday = triggers.filter(t =>
-      recentMealFoods.some(food => food.includes(t.name.toLowerCase()))
-    );
+    // Detect triggers
+    const triggers = analyzeTriggers(meals, symptoms);
+    const triggerNames = triggers.slice(0, 3).map(t => t.name);
 
-    // Determine risk level
-    if (avgSeverity >= 6 || triggersEatenToday.length >= 2) {
-      return {
-        level: 'high',
-        emoji: '🔴',
-        color: Colors.danger,
-        message: recentSymptoms.length > 0
-          ? "You've had symptoms recently. Take it easy today."
-          : triggersEatenToday.length > 0
-            ? `Watch out - you had ${triggersEatenToday[0]?.name} which often bothers you.`
-            : "Your gut may be sensitive today."
-      };
-    }
+    // High risk foods to watch
+    const highRiskFoods: string[] = [];
+    if (user?.hasIBS) highRiskFoods.push('High FODMAP');
+    if (user?.lactoseIntolerant) highRiskFoods.push('Dairy');
+    if (triggerNames.length > 0) highRiskFoods.push(...triggerNames.slice(0, 2));
 
-    if (avgSeverity >= 3 || triggersEatenToday.length >= 1) {
-      return {
-        level: 'medium',
-        emoji: '🟡',
-        color: Colors.warning,
-        message: triggersEatenToday.length > 0
-          ? `You had ${triggersEatenToday[0]?.name} - monitor how you feel.`
-          : "Mild symptoms detected. Stick to safe foods."
-      };
-    }
+    let riskLevel: 'Low' | 'Medium' | 'High' = 'Low';
+    if (avgFodmap > 70) riskLevel = 'High';
+    else if (avgFodmap > 40) riskLevel = 'Medium';
 
     return {
-      level: 'low',
-      emoji: '🟢',
-      color: Colors.success,
-      message: "Looking good! Your gut is feeling great."
+      mealsLogged: todaysMeals.length,
+      calories,
+      protein,
+      riskLevel,
+      highRiskFoods: highRiskFoods.slice(0, 3)
     };
-  }, [symptoms, todaysMeals, triggers]);
+  }, [todaysMeals, meals, symptoms, user]);
 
-  // Get top 3 triggers for display
-  const topTriggers = useMemo(() => triggers.slice(0, 3), [triggers]);
+  // Get Today's Focus based on user goal
+  const getTodaysFocus = (): TodaysFocusData => {
+    const goal = user?.goal || 'manage_digestion';
+    const calorieTarget = user?.dailyCalorieTarget || 2000;
+    const proteinTarget = user?.proteinTarget || 100;
+    const caloriesLeft = Math.max(0, calorieTarget - dailyStats.calories);
 
-  // Get safe foods (foods eaten without symptoms)
-  const safeFoods = useMemo(() => {
-    const foodsWithSymptoms = new Set<string>();
+    if (goal === 'weight_loss' || goal === 'weight_maintenance' || goal === 'weight_gain') {
+      return {
+        lines: [
+          { label: 'Target', value: `${calorieTarget} cal` },
+          { label: 'Used', value: `${dailyStats.calories} cal (${dailyStats.mealsLogged} meals)` },
+          { label: 'Left', value: `${caloriesLeft} cal`, highlight: true },
+          { label: 'Protein', value: `${dailyStats.protein}g / ${proteinTarget}g` },
+        ],
+        tip: caloriesLeft > 0
+          ? `Try: Keep dinner under ${Math.round(caloriesLeft * 0.8)} cal`
+          : 'You\'ve reached your calorie target!'
+      };
+    }
 
-    // Find foods that are followed by symptoms
-    symptoms.forEach(symptom => {
-      const symptomTime = new Date(symptom.timestamp).getTime();
-      const isSevere = symptom.bloat >= 3 || symptom.pain >= 3 || symptom.energy <= 2;
-
-      if (isSevere) {
-        meals.forEach(meal => {
-          const mealTime = new Date(meal.timestamp).getTime();
-          const diffHours = (symptomTime - mealTime) / (1000 * 60 * 60);
-          if (diffHours >= 0.5 && diffHours <= 6) {
-            meal.foods.forEach(f => foodsWithSymptoms.add(f.name.toLowerCase()));
-          }
-        });
-      }
-    });
-
-    // Find foods eaten 3+ times without symptoms
-    const foodCounts: Record<string, { name: string; count: number }> = {};
-    meals.forEach(meal => {
-      meal.foods.forEach(f => {
-        const key = f.name.toLowerCase();
-        if (!foodsWithSymptoms.has(key)) {
-          if (!foodCounts[key]) {
-            foodCounts[key] = { name: f.name, count: 0 };
-          }
-          foodCounts[key].count++;
-        }
-      });
-    });
-
-    return Object.values(foodCounts)
-      .filter(f => f.count >= 2)
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-  }, [meals, symptoms]);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setRefreshing(false);
+    // Digestive / Trigger understanding goals
+    return {
+      lines: [
+        { label: 'Risk level', value: dailyStats.riskLevel, highlight: dailyStats.riskLevel !== 'Low' },
+        { label: 'Watch', value: dailyStats.highRiskFoods.length > 0 ? dailyStats.highRiskFoods.join(', ') : 'Nothing specific' },
+        { label: 'Meals logged', value: `${dailyStats.mealsLogged}` },
+      ],
+      tip: dailyStats.mealsLogged < 3
+        ? 'Try: Scan all meals today to learn your patterns'
+        : 'Try: Choose low-FODMAP options for your next meal'
+    };
   };
 
-  const formatTime = (date: Date) => {
-    return new Date(date).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    });
-  };
+  const todaysFocus = getTodaysFocus();
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -155,55 +113,35 @@ export default function HomeScreen() {
     return 'evening';
   };
 
-  const getStatus = (meal: Meal): 'safe' | 'caution' | 'avoid' => {
-    if (meal.status) return meal.status;
-    if (meal.score >= 80) return 'safe';
-    if (meal.score >= 50) return 'caution';
-    return 'avoid';
+  const formatMealTime = (date: Date) => {
+    const hour = new Date(date).getHours();
+    if (hour < 11) return 'Breakfast';
+    if (hour < 15) return 'Lunch';
+    if (hour < 18) return 'Snack';
+    return 'Dinner';
   };
 
-  const getStatusColor = (status: Trigger['status']) => {
-    switch (status) {
-      case 'avoid': return Colors.danger;
-      case 'limit': return Colors.warning;
-      case 'monitor': return '#FF9500';
-      default: return Colors.warning;
-    }
-  };
-
-  const renderMealCard = (meal: Meal) => {
-    const status = getStatus(meal);
-    const statusColor = status === 'safe' ? Colors.success :
-      status === 'caution' ? Colors.warning : Colors.danger;
+  const renderRecentMeal = (meal: Meal, index: number) => {
+    const mealType = formatMealTime(meal.timestamp);
+    const foodNames = meal.foods.map(f => f.name).join(' & ');
 
     return (
       <TouchableOpacity
         key={meal.id}
-        style={styles.mealCard}
+        style={styles.recentMealItem}
         onPress={() => router.push({ pathname: '/meal-detail', params: { mealId: meal.id } })}
         activeOpacity={0.7}
       >
         <Image
           source={{ uri: meal.imageUri }}
-          style={styles.mealImage}
+          style={styles.recentMealImage}
           contentFit="cover"
         />
-        <View style={styles.mealInfo}>
-          <Text style={styles.mealName} numberOfLines={1}>
-            {meal.foods.map(f => f.name).join(' & ')}
-          </Text>
-          <View style={styles.mealMeta}>
-            <Text style={[styles.mealStatus, { color: statusColor }]}>
-              {status === 'safe' ? '✓ Safe' : status === 'caution' ? '⚠ Caution' : '✕ Avoid'}
-            </Text>
-            <Text style={styles.mealScore}>Score: {meal.score}/100</Text>
-          </View>
-          <View style={styles.mealTimeRow}>
-            <Clock size={12} color={Colors.textTertiary} />
-            <Text style={styles.mealTime}>{formatTime(meal.timestamp)}</Text>
-          </View>
+        <View style={styles.recentMealInfo}>
+          <Text style={styles.recentMealType}>{mealType}</Text>
+          <Text style={styles.recentMealName} numberOfLines={1}>{foodNames}</Text>
         </View>
-        <ChevronRight size={20} color={Colors.textTertiary} />
+        <ChevronRight size={18} color={Colors.textTertiary} />
       </TouchableOpacity>
     );
   };
@@ -218,108 +156,60 @@ export default function HomeScreen() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
-        }
       >
         {/* Header */}
         <View style={styles.header}>
-          <View style={styles.headerTop}>
-            <View style={styles.headerLeft}>
-              <Text style={styles.greeting}>
-                Good {getGreeting()}, {user?.name?.split(' ')[0] || 'there'} 👋
-              </Text>
-            </View>
-            {(user?.streak || 0) > 0 && (
-              <View style={styles.streakBadge}>
-                <Text style={styles.streakEmoji}>🔥</Text>
-                <Text style={styles.streakText}>{user?.streak}</Text>
+          <Text style={styles.greeting}>
+            Good {getGreeting()}, {user?.name?.split(' ')[0] || 'there'} 👋
+          </Text>
+        </View>
+
+        {/* Card 1: Today's Focus */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>TODAY'S FOCUS</Text>
+          <View style={styles.focusLines}>
+            {todaysFocus.lines.map((line, index) => (
+              <View key={index} style={styles.focusLine}>
+                <Text style={styles.focusLabel}>{line.label}</Text>
+                <Text style={[
+                  styles.focusValue,
+                  line.highlight && styles.focusValueHighlight
+                ]}>
+                  {line.value}
+                </Text>
               </View>
-            )}
+            ))}
+          </View>
+          <View style={styles.focusTip}>
+            <Text style={styles.focusTipText}>{todaysFocus.tip}</Text>
           </View>
         </View>
 
-        {/* Gut Risk Forecast - PROMINENT */}
-        <View style={[styles.riskCard, { borderLeftColor: gutRiskForecast.color }]}>
-          <View style={styles.riskHeader}>
-            <Text style={styles.riskEmoji}>{gutRiskForecast.emoji}</Text>
-            <View style={styles.riskTextContainer}>
-              <Text style={styles.riskTitle}>
-                Today's Gut Risk: <Text style={{ color: gutRiskForecast.color, textTransform: 'capitalize' }}>{gutRiskForecast.level}</Text>
-              </Text>
-              <Text style={styles.riskMessage}>{gutRiskForecast.message}</Text>
-            </View>
-          </View>
-        </View>
+        {/* Scan Button */}
+        <TouchableOpacity
+          style={styles.scanButton}
+          onPress={() => router.push('/(tabs)/scan')}
+          activeOpacity={0.9}
+        >
+          <Camera size={24} color={Colors.white} />
+          <Text style={styles.scanButtonText}>SCAN NOW</Text>
+        </TouchableOpacity>
 
-        {/* Quick Actions */}
-        <View style={styles.quickActions}>
-          <TouchableOpacity
-            style={[styles.quickActionButton, styles.safeButton]}
-            onPress={() => router.push('/food-lists')}
-            activeOpacity={0.7}
-          >
-            <Shield size={20} color={Colors.success} />
-            <Text style={styles.quickActionText}>Safe Foods</Text>
-            <Text style={styles.quickActionCount}>{safeFoods.length}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.quickActionButton, styles.avoidButton]}
-            onPress={() => router.push('/food-lists')}
-            activeOpacity={0.7}
-          >
-            <Ban size={20} color={Colors.danger} />
-            <Text style={styles.quickActionText}>Avoid</Text>
-            <Text style={styles.quickActionCount}>{triggers.filter(t => t.status === 'avoid').length}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Safe Foods Preview */}
-        {safeFoods.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>✅ Safe for You</Text>
-            </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.safeFoodsList}>
-              {safeFoods.map((food, index) => (
-                <View key={index} style={styles.safeFoodChip}>
-                  <Text style={styles.safeFoodText}>{food.name}</Text>
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* Today's Meals */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Today&apos;s Meals</Text>
+        {/* Card 3: Recent Meals */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>TODAY'S MEALS</Text>
           {todaysMeals.length > 0 ? (
-            <View style={styles.mealsList}>
-              {todaysMeals.map(renderMealCard)}
+            <View style={styles.recentMealsList}>
+              {todaysMeals.slice(0, 3).map(renderRecentMeal)}
             </View>
           ) : (
-            <TouchableOpacity
-              style={styles.emptyState}
-              onPress={() => router.push('/(tabs)/scan')}
-              activeOpacity={0.8}
-            >
-              <Camera size={40} color={Colors.primary} />
-              <Text style={styles.emptyText}>No meals yet today</Text>
-              <Text style={styles.emptySubtext}>Tap to scan your first meal</Text>
-            </TouchableOpacity>
+            <View style={styles.emptyMeals}>
+              <Text style={styles.emptyMealsText}>No meals logged today</Text>
+              <Text style={styles.emptyMealsSubtext}>Scan your first meal to get started</Text>
+            </View>
           )}
         </View>
       </ScrollView>
-
-      {/* Large Scan FAB */}
-      <TouchableOpacity
-        style={[styles.fab, { bottom: 20 }]}
-        onPress={() => router.push('/(tabs)/scan')}
-        activeOpacity={0.9}
-      >
-        <Camera size={28} color={Colors.white} />
-        <Text style={styles.fabText}>Scan Meal</Text>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -334,284 +224,129 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 120,
+    paddingBottom: 40,
   },
   header: {
-    paddingVertical: 16,
+    paddingVertical: 20,
   },
   greeting: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '700',
     color: Colors.text,
   },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerLeft: {
-    flex: 1,
-  },
-  streakBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.warning,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 4,
-  },
-  streakEmoji: {
-    fontSize: 16,
-  },
-  streakText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.white,
-  },
 
-  // Risk Forecast Card
-  riskCard: {
+  // Card styles
+  card: {
     backgroundColor: Colors.backgroundWhite,
     borderRadius: 16,
-    padding: 16,
+    padding: 20,
     marginBottom: 16,
-    borderLeftWidth: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 2,
   },
-  riskHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  riskEmoji: {
-    fontSize: 32,
-    marginRight: 12,
-  },
-  riskTextContainer: {
-    flex: 1,
-  },
-  riskTitle: {
-    fontSize: 17,
+  cardTitle: {
+    fontSize: 12,
     fontWeight: '700',
-    color: Colors.text,
-    marginBottom: 4,
-  },
-  riskMessage: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    lineHeight: 20,
+    color: Colors.textTertiary,
+    letterSpacing: 1,
+    marginBottom: 16,
   },
 
-  // Quick Actions
-  quickActions: {
-    flexDirection: 'row',
+  // Today's Focus styles
+  focusLines: {
     gap: 12,
-    marginBottom: 20,
   },
-  quickActionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    borderRadius: 12,
-    gap: 8,
-  },
-  safeButton: {
-    backgroundColor: 'rgba(76, 175, 80, 0.1)',
-  },
-  avoidButton: {
-    backgroundColor: 'rgba(244, 67, 54, 0.1)',
-  },
-  quickActionText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.text,
-    flex: 1,
-  },
-  quickActionCount: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.textSecondary,
-  },
-
-  // Sections
-  section: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
+  focusLine: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
   },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
+  focusLabel: {
+    fontSize: 15,
+    color: Colors.textSecondary,
+  },
+  focusValue: {
+    fontSize: 15,
+    fontWeight: '600',
     color: Colors.text,
   },
-  sectionLink: {
+  focusValueHighlight: {
+    color: Colors.primary,
+    fontWeight: '700',
+  },
+  focusTip: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+  },
+  focusTipText: {
     fontSize: 14,
     color: Colors.primary,
-    fontWeight: '600',
+    fontWeight: '500',
   },
 
-  // Triggers
-  triggersList: {
-    gap: 8,
-  },
-  triggerCard: {
+  // Scan Button styles
+  scanButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.backgroundWhite,
-    padding: 14,
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
     borderRadius: 12,
-    borderLeftWidth: 4,
-    gap: 12,
+    paddingVertical: 16,
+    marginBottom: 16,
+    gap: 10,
   },
-  triggerBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  triggerBadgeText: {
-    fontSize: 10,
+  scanButtonText: {
+    fontSize: 17,
     fontWeight: '700',
     color: Colors.white,
     letterSpacing: 0.5,
   },
-  triggerName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: Colors.text,
-    flex: 1,
-  },
-  triggerConfidence: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    fontWeight: '500',
-  },
 
-  // Safe Foods
-  safeFoodsList: {
-    gap: 8,
-  },
-  safeFoodChip: {
-    backgroundColor: 'rgba(76, 175, 80, 0.15)',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(76, 175, 80, 0.3)',
-  },
-  safeFoodText: {
-    fontSize: 14,
-    color: Colors.success,
-    fontWeight: '600',
-  },
-
-  // Meals
-  mealsList: {
+  // Recent Meals styles
+  recentMealsList: {
     gap: 12,
   },
-  mealCard: {
+  recentMealItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.backgroundWhite,
-    borderRadius: 12,
-    padding: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 1,
+    gap: 12,
   },
-  mealImage: {
-    width: 60,
-    height: 60,
+  recentMealImage: {
+    width: 48,
+    height: 48,
     borderRadius: 8,
   },
-  mealInfo: {
+  recentMealInfo: {
     flex: 1,
-    marginLeft: 12,
   },
-  mealName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: Colors.text,
-    marginBottom: 4,
-  },
-  mealMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 4,
-  },
-  mealStatus: {
+  recentMealType: {
     fontSize: 12,
-    fontWeight: '500',
-  },
-  mealScore: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-  },
-  mealTimeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  mealTime: {
-    fontSize: 11,
     color: Colors.textTertiary,
-  },
-
-  // Empty State
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    backgroundColor: Colors.backgroundWhite,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: Colors.primary,
-    borderStyle: 'dashed',
-  },
-  emptyText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.text,
-    marginTop: 12,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: Colors.primary,
-    marginTop: 4,
     fontWeight: '500',
   },
-
-  // FAB
-  fab: {
-    position: 'absolute',
-    right: 20,
-    left: 20,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: Colors.primary,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 8,
+  recentMealName: {
+    fontSize: 15,
+    color: Colors.text,
+    fontWeight: '500',
+    marginTop: 2,
   },
-  fabText: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: Colors.white,
+  emptyMeals: {
+    alignItems: 'center',
+    paddingVertical: 24,
+  },
+  emptyMealsText: {
+    fontSize: 15,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  emptyMealsSubtext: {
+    fontSize: 13,
+    color: Colors.textTertiary,
+    marginTop: 4,
   },
 });

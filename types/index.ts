@@ -1,3 +1,10 @@
+export type UserGoal =
+  | 'weight_loss'
+  | 'weight_maintenance'
+  | 'weight_gain'
+  | 'manage_digestion'
+  | 'understand_triggers';
+
 export interface User {
   id: string;
   email: string;
@@ -9,6 +16,11 @@ export interface User {
   gutConcern: string;
   streak: number;
   isPro: boolean;
+  // Goal-based personalization
+  goal?: UserGoal;
+  dailyCalorieTarget?: number;
+  proteinTarget?: number;
+  lactoseIntolerant?: boolean;
 }
 
 export interface Meal {
@@ -27,6 +39,11 @@ export interface Meal {
     fiber_diversity: number;
     probiotic: number;
   };
+  // Nutrition data for weight-focused goals
+  calories?: number;
+  protein?: number;
+  carbs?: number;
+  fat?: number;
   status?: 'safe' | 'caution' | 'avoid';
   analysis?: string[];
   triggers?: string[];

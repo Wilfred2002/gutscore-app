@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx expo-router:*)"
+      "Bash(npx expo-router:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": [],
     "ask": []

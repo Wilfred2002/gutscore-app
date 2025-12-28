@@ -1,20 +1,47 @@
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { ChevronDown, Lightbulb } from 'lucide-react-native';
+import { Lightbulb } from 'lucide-react-native';
 import Svg, { Path, Circle, Line, Text as SvgText } from 'react-native-svg';
 import Colors from '@/constants/colors';
 import { useApp } from '@/contexts/AppContext';
 import { analyzeTriggers } from '@/lib/trigger-engine';
-import { useMemo } from 'react';
+import { generateTips, calculateProgress, calculateSafeFoods, detectPatterns, calculateFodmapExposure } from '@/lib/insights-engine';
+import { useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 
 export default function InsightsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { meals, symptoms, user } = useApp();
 
+  // State for FODMAP week navigation
+  const [fodmapWeekOffset, setFodmapWeekOffset] = useState(0);
+
   // Calculate real triggers
   const triggers = useMemo(() => analyzeTriggers(meals, symptoms), [meals, symptoms]);
+
+  // Calculate progress metrics for dashboard
+  const progress = useMemo(() => calculateProgress(meals, symptoms), [meals, symptoms]);
+
+  // Calculate safe foods (foods eaten 3+ times without symptoms)
+  const safeFoods = useMemo(() => calculateSafeFoods(meals, symptoms), [meals, symptoms]);
+
+  // Detect patterns in user's data
+  const patterns = useMemo(() => detectPatterns(meals, symptoms), [meals, symptoms]);
+
+  // Calculate FODMAP exposure for the selected week
+  const fodmapExposure = useMemo(() =>
+    calculateFodmapExposure(meals, symptoms, fodmapWeekOffset),
+    [meals, symptoms, fodmapWeekOffset]
+  );
+
+  // Helper to get week label
+  const getFodmapWeekLabel = () => {
+    if (fodmapWeekOffset === 0) return 'This Week';
+    if (fodmapWeekOffset === 1) return 'Last Week';
+    return `${fodmapWeekOffset} Weeks Ago`;
+  };
 
   // Calculate weekly scores from real meals
   const weeklyScores = useMemo(() => {
@@ -79,9 +106,47 @@ export default function InsightsScreen() {
     ].filter(([, count]) => (count as number) > 0).sort((a, b) => (b[1] as number) - (a[1] as number));
   }, [symptoms]);
 
+  // Calculate symptom heatmap data (real data, not random)
+  const symptomHeatmap = useMemo(() => {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const today = new Date();
+    const heatmapData: { day: string; bloat: number; pain: number; energy: number }[] = [];
+
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dayIndex = date.getDay();
+
+      const daySymptoms = symptoms.filter(s => {
+        const symptomDate = new Date(s.timestamp);
+        return symptomDate.toDateString() === date.toDateString();
+      });
+
+      heatmapData.push({
+        day: days[dayIndex === 0 ? 6 : dayIndex - 1], // Adjust for Mon-Sun order
+        bloat: daySymptoms.length > 0
+          ? daySymptoms.reduce((sum, s) => sum + s.bloat, 0) / daySymptoms.length
+          : 0,
+        pain: daySymptoms.length > 0
+          ? daySymptoms.reduce((sum, s) => sum + s.pain, 0) / daySymptoms.length
+          : 0,
+        energy: daySymptoms.length > 0
+          ? 5 - (daySymptoms.reduce((sum, s) => sum + s.energy, 0) / daySymptoms.length) // Invert so low energy = worse
+          : 0
+      });
+    }
+    return heatmapData;
+  }, [symptoms]);
+
   const avgScore = weeklyScores.length > 0
     ? Math.round(weeklyScores.reduce((sum, d) => sum + d.score, 0) / weeklyScores.length)
     : 0;
+
+  // Generate dynamic tips based on user data
+  const dynamicTips = useMemo(() =>
+    generateTips(meals, symptoms, triggers, fiberDiversity),
+    [meals, symptoms, triggers, fiberDiversity]
+  );
 
   // Chart dimensions
   const chartWidth = 300;
@@ -124,11 +189,44 @@ export default function InsightsScreen() {
       >
         <View style={styles.header}>
           <Text style={styles.title}>Your Insights</Text>
-          <TouchableOpacity style={styles.periodSelector}>
-            <Text style={styles.periodText}>This Week</Text>
-            <ChevronDown size={16} color={Colors.primary} />
-          </TouchableOpacity>
         </View>
+
+        {/* Progress Dashboard */}
+        {progress.mealsLogged >= 3 ? (
+          <View style={styles.progressCard}>
+            <Text style={styles.progressTitle}>This Week's Progress</Text>
+            <View style={styles.progressMetrics}>
+              <View style={styles.progressMetric}>
+                <Text style={styles.progressValue}>{progress.avgScore}</Text>
+                <Text style={styles.progressLabel}>Avg Score</Text>
+                {progress.weekOverWeek !== 0 && (
+                  <Text style={[
+                    styles.progressChange,
+                    { color: progress.weekOverWeek > 0 ? Colors.success : Colors.danger }
+                  ]}>
+                    {progress.weekOverWeek > 0 ? '+' : ''}{progress.weekOverWeek} vs last week
+                  </Text>
+                )}
+              </View>
+              <View style={styles.progressDivider} />
+              <View style={styles.progressMetric}>
+                <Text style={styles.progressValue}>{progress.goodDaysCount}</Text>
+                <Text style={styles.progressLabel}>Good Days</Text>
+                <Text style={styles.progressNote}>score ≥80</Text>
+              </View>
+              <View style={styles.progressDivider} />
+              <View style={styles.progressMetric}>
+                <Text style={styles.progressValue}>{progress.symptomFreeStreak}</Text>
+                <Text style={styles.progressLabel}>Day Streak</Text>
+                <Text style={styles.progressNote}>symptom-free</Text>
+              </View>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.card}>
+            <Text style={styles.emptyStateText}>Log 3+ meals this week to see your progress</Text>
+          </View>
+        )}
 
         {/* Top Triggers Card */}
         <View style={styles.triggersCard}>
@@ -162,6 +260,30 @@ export default function InsightsScreen() {
           )}
           <Text style={styles.triggersNote}>Based on {meals.length} meals & {symptoms.length} symptom logs</Text>
         </View>
+
+        {/* Safe Foods Card */}
+        {safeFoods.length > 0 ? (
+          <View style={styles.safeFoodsCard}>
+            <Text style={styles.safeFoodsTitle}>Your Safe Foods</Text>
+            <View style={styles.safeFoodsList}>
+              {safeFoods.slice(0, 5).map((food, index) => (
+                <View key={index} style={styles.safeFoodItem}>
+                  <View style={styles.safeFoodInfo}>
+                    <Text style={styles.safeFoodCheck}>✓</Text>
+                    <Text style={styles.safeFoodName}>{food.name}</Text>
+                  </View>
+                  <Text style={styles.safeFoodCount}>Eaten {food.count}x</Text>
+                </View>
+              ))}
+            </View>
+            <Text style={styles.safeFoodsNote}>Foods eaten 3+ times without symptoms</Text>
+          </View>
+        ) : meals.length >= 5 && symptoms.length >= 2 ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Safe Foods</Text>
+            <Text style={styles.emptyStateText}>Keep logging to identify your safe foods</Text>
+          </View>
+        ) : null}
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Gut Health Score Trend</Text>
@@ -216,56 +338,114 @@ export default function InsightsScreen() {
           <Text style={styles.chartLegend}>Your average: {avgScore}/100</Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Fiber Diversity</Text>
-          <View style={styles.fiberContainer}>
-            <View style={styles.fiberRing}>
-              <Svg width={120} height={120}>
-                <Circle
-                  cx={60}
-                  cy={60}
-                  r={50}
-                  stroke={Colors.border}
-                  strokeWidth={10}
-                  fill="none"
-                />
-                <Circle
-                  cx={60}
-                  cy={60}
-                  r={50}
-                  stroke={Colors.primary}
-                  strokeWidth={10}
-                  fill="none"
-                  strokeDasharray={`${(18 / 28) * 314} 314`}
-                  strokeLinecap="round"
-                  transform="rotate(-90 60 60)"
-                />
-              </Svg>
-              <View style={styles.fiberCenter}>
-                <Text style={styles.fiberNumber}>18/28</Text>
-                <Text style={styles.fiberLabel}>plant families</Text>
+        {/* Pattern Discoveries */}
+        {patterns.length > 0 && (
+          <View style={styles.card}>
+            <View style={styles.patternsHeader}>
+              <Lightbulb size={18} color={Colors.primary} />
+              <Text style={styles.cardTitle}>Discoveries</Text>
+            </View>
+            <View style={styles.patternsList}>
+              {patterns.map((pattern, index) => (
+                <Text key={index} style={styles.patternItem}>{pattern.insight}</Text>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* FODMAP Exposure Card */}
+        {fodmapExposure.totalMeals > 0 ? (
+          <View style={styles.card}>
+            <View style={styles.fodmapHeader}>
+              <Text style={styles.cardTitle}>FODMAP Exposure</Text>
+              <View style={styles.fodmapNav}>
+                <TouchableOpacity
+                  onPress={() => setFodmapWeekOffset(prev => prev + 1)}
+                  style={styles.fodmapNavButton}
+                  disabled={fodmapWeekOffset >= 4}
+                >
+                  <ChevronLeft size={20} color={fodmapWeekOffset >= 4 ? Colors.textLight : Colors.primary} />
+                </TouchableOpacity>
+                <Text style={styles.fodmapWeekLabel}>{getFodmapWeekLabel()}</Text>
+                <TouchableOpacity
+                  onPress={() => setFodmapWeekOffset(prev => Math.max(0, prev - 1))}
+                  style={styles.fodmapNavButton}
+                  disabled={fodmapWeekOffset === 0}
+                >
+                  <ChevronRight size={20} color={fodmapWeekOffset === 0 ? Colors.textLight : Colors.primary} />
+                </TouchableOpacity>
               </View>
             </View>
-            <Text style={styles.fiberTip}>Aim for 30+ different plant foods weekly</Text>
+
+            <View style={styles.fodmapBars}>
+              <View style={styles.fodmapRow}>
+                <View style={styles.fodmapLabelContainer}>
+                  <View style={[styles.fodmapDot, { backgroundColor: Colors.danger }]} />
+                  <Text style={styles.fodmapLabel}>High</Text>
+                </View>
+                <View style={styles.fodmapBarContainer}>
+                  <View style={[styles.fodmapBar, styles.fodmapBarHigh, { width: `${Math.min((fodmapExposure.high / Math.max(fodmapExposure.totalMeals, 1)) * 100, 100)}%` }]} />
+                </View>
+                <Text style={styles.fodmapCount}>{fodmapExposure.high}</Text>
+              </View>
+              <View style={styles.fodmapRow}>
+                <View style={styles.fodmapLabelContainer}>
+                  <View style={[styles.fodmapDot, { backgroundColor: Colors.warning }]} />
+                  <Text style={styles.fodmapLabel}>Medium</Text>
+                </View>
+                <View style={styles.fodmapBarContainer}>
+                  <View style={[styles.fodmapBar, styles.fodmapBarMedium, { width: `${Math.min((fodmapExposure.medium / Math.max(fodmapExposure.totalMeals, 1)) * 100, 100)}%` }]} />
+                </View>
+                <Text style={styles.fodmapCount}>{fodmapExposure.medium}</Text>
+              </View>
+              <View style={styles.fodmapRow}>
+                <View style={styles.fodmapLabelContainer}>
+                  <View style={[styles.fodmapDot, { backgroundColor: Colors.success }]} />
+                  <Text style={styles.fodmapLabel}>Low</Text>
+                </View>
+                <View style={styles.fodmapBarContainer}>
+                  <View style={[styles.fodmapBar, styles.fodmapBarLow, { width: `${Math.min((fodmapExposure.low / Math.max(fodmapExposure.totalMeals, 1)) * 100, 100)}%` }]} />
+                </View>
+                <Text style={styles.fodmapCount}>{fodmapExposure.low}</Text>
+              </View>
+            </View>
+
+            {fodmapExposure.high > 0 && fodmapExposure.correlation > 0 && (
+              <View style={styles.fodmapCorrelation}>
+                <Text style={styles.fodmapCorrelationText}>
+                  {fodmapExposure.symptomDaysAfterHigh} symptom day{fodmapExposure.symptomDaysAfterHigh !== 1 ? 's' : ''} after high FODMAP meals ({fodmapExposure.correlation}% correlation)
+                </Text>
+              </View>
+            )}
           </View>
-        </View>
+        ) : (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>FODMAP Exposure</Text>
+            <Text style={styles.emptyStateText}>Scan meals to track your FODMAP intake</Text>
+          </View>
+        )}
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Symptom Heatmap</Text>
           <View style={styles.heatmapContainer}>
             <View style={styles.heatmapHeader}>
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
-                <Text key={day} style={styles.heatmapDay}>{day}</Text>
+              {symptomHeatmap.map((day, idx) => (
+                <Text key={idx} style={styles.heatmapDay}>{day.day}</Text>
               ))}
             </View>
-            {['Bloating', 'Cramping', 'Gas', 'Energy'].map((symptom, rowIdx) => (
-              <View key={symptom} style={styles.heatmapRow}>
-                <Text style={styles.heatmapLabel}>{symptom}</Text>
+            {[
+              { label: 'Bloating', key: 'bloat' as const },
+              { label: 'Pain', key: 'pain' as const },
+              { label: 'Low Energy', key: 'energy' as const }
+            ].map((symptom) => (
+              <View key={symptom.label} style={styles.heatmapRow}>
+                <Text style={styles.heatmapLabel}>{symptom.label}</Text>
                 <View style={styles.heatmapCells}>
-                  {[0, 1, 2, 3, 4, 5, 6].map(dayIdx => {
-                    const intensity = Math.random();
-                    const bgColor = intensity < 0.3 ? Colors.background :
-                      intensity < 0.6 ? Colors.warningLight :
+                  {symptomHeatmap.map((dayData, dayIdx) => {
+                    const intensity = dayData[symptom.key] / 5; // Normalize to 0-1
+                    const bgColor = intensity === 0 ? Colors.border :
+                      intensity < 0.4 ? Colors.background :
+                      intensity < 0.7 ? Colors.warningLight :
                         Colors.dangerLight;
                     return (
                       <View
@@ -278,6 +458,9 @@ export default function InsightsScreen() {
               </View>
             ))}
           </View>
+          {symptoms.length === 0 && (
+            <Text style={styles.heatmapEmpty}>Log symptoms to see patterns</Text>
+          )}
         </View>
 
         <View style={styles.card}>
@@ -286,13 +469,10 @@ export default function InsightsScreen() {
             <Text style={styles.cardTitle}>Personalized Tips</Text>
           </View>
           <View style={styles.tipsList}>
-            <Text style={styles.tipItem}>🥦 Add more soluble fiber (oats, carrots) - supports good bacteria</Text>
-            <Text style={styles.tipItem}>💧 Increase water to 8+ glasses - aids digestion</Text>
-            <Text style={styles.tipItem}>🔔 Log symptoms consistently - helps refine your profile</Text>
+            {dynamicTips.map((tip, index) => (
+              <Text key={index} style={styles.tipItem}>{tip}</Text>
+            ))}
           </View>
-          <TouchableOpacity style={styles.coachLink}>
-            <Text style={styles.coachLinkText}>Get AI Coach Recommendations</Text>
-          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>
@@ -322,15 +502,210 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     color: Colors.text,
   },
-  periodSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+  // Progress Dashboard styles
+  progressCard: {
+    backgroundColor: Colors.backgroundWhite,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
   },
-  periodText: {
+  progressTitle: {
     fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.textSecondary,
+    marginBottom: 16,
+    textAlign: 'center' as const,
+  },
+  progressMetrics: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-around',
+    alignItems: 'flex-start' as const,
+  },
+  progressMetric: {
+    flex: 1,
+    alignItems: 'center' as const,
+  },
+  progressValue: {
+    fontSize: 32,
+    fontWeight: '700' as const,
     color: Colors.primary,
+  },
+  progressLabel: {
+    fontSize: 12,
     fontWeight: '500' as const,
+    color: Colors.textSecondary,
+    marginTop: 4,
+  },
+  progressChange: {
+    fontSize: 11,
+    fontWeight: '500' as const,
+    marginTop: 2,
+  },
+  progressNote: {
+    fontSize: 10,
+    color: Colors.textTertiary,
+    marginTop: 2,
+  },
+  progressDivider: {
+    width: 1,
+    height: 50,
+    backgroundColor: Colors.border,
+    marginHorizontal: 8,
+  },
+  // Safe Foods styles
+  safeFoodsCard: {
+    backgroundColor: Colors.success,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+  },
+  safeFoodsTitle: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: Colors.white,
+    marginBottom: 16,
+  },
+  safeFoodsList: {
+    gap: 10,
+  },
+  safeFoodItem: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between',
+    alignItems: 'center' as const,
+  },
+  safeFoodInfo: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+  },
+  safeFoodCheck: {
+    fontSize: 14,
+    color: Colors.white,
+    fontWeight: '600' as const,
+  },
+  safeFoodName: {
+    fontSize: 14,
+    color: Colors.white,
+    fontWeight: '500' as const,
+  },
+  safeFoodCount: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+  },
+  safeFoodsNote: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 16,
+    textAlign: 'center' as const,
+  },
+  // Patterns styles
+  patternsHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    marginBottom: 12,
+  },
+  patternsList: {
+    gap: 10,
+  },
+  patternItem: {
+    fontSize: 14,
+    color: Colors.text,
+    lineHeight: 20,
+    paddingLeft: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.primaryLight,
+  },
+  // Empty state styles
+  emptyStateText: {
+    fontSize: 14,
+    color: Colors.textTertiary,
+    textAlign: 'center' as const,
+    paddingVertical: 20,
+    fontStyle: 'italic' as const,
+  },
+  // FODMAP Exposure styles
+  fodmapHeader: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between',
+    alignItems: 'center' as const,
+    marginBottom: 16,
+  },
+  fodmapNav: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+  },
+  fodmapNavButton: {
+    padding: 4,
+  },
+  fodmapWeekLabel: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontWeight: '500' as const,
+    minWidth: 80,
+    textAlign: 'center' as const,
+  },
+  fodmapBars: {
+    gap: 12,
+  },
+  fodmapRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+  },
+  fodmapLabelContainer: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    width: 70,
+    gap: 6,
+  },
+  fodmapDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  fodmapLabel: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  fodmapBarContainer: {
+    flex: 1,
+    height: 8,
+    backgroundColor: Colors.border,
+    borderRadius: 4,
+    overflow: 'hidden' as const,
+  },
+  fodmapBar: {
+    height: '100%' as const,
+    borderRadius: 4,
+  },
+  fodmapBarHigh: {
+    backgroundColor: Colors.danger,
+  },
+  fodmapBarMedium: {
+    backgroundColor: Colors.warning,
+  },
+  fodmapBarLow: {
+    backgroundColor: Colors.success,
+  },
+  fodmapCount: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: Colors.text,
+    width: 24,
+    textAlign: 'right' as const,
+  },
+  fodmapCorrelation: {
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+  },
+  fodmapCorrelationText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    textAlign: 'center' as const,
   },
   triggersCard: {
     backgroundColor: Colors.primary,
@@ -471,6 +846,13 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 4,
   },
+  heatmapEmpty: {
+    fontSize: 12,
+    color: Colors.textTertiary,
+    textAlign: 'center',
+    marginTop: 12,
+    fontStyle: 'italic',
+  },
   tipsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -484,17 +866,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.text,
     lineHeight: 20,
-  },
-  coachLink: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: Colors.borderLight,
-  },
-  coachLinkText: {
-    fontSize: 14,
-    color: Colors.primary,
-    fontWeight: '500' as const,
-    textAlign: 'center',
   },
 });

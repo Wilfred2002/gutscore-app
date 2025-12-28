@@ -218,7 +218,7 @@ export default function ScanScreen() {
         {/* Bottom overlay with confirm/retake buttons */}
         <LinearGradient
           colors={['transparent', 'rgba(0,0,0,0.8)']}
-          style={[styles.previewBottomOverlay, { paddingBottom: insets.bottom + 20 }]}
+          style={[styles.previewBottomOverlay, { paddingBottom: insets.bottom + 20 + 85 }]}
         >
           {isAnalyzing ? (
             <View style={styles.analyzingContainer}>
@@ -296,7 +296,7 @@ export default function ScanScreen() {
 
         <LinearGradient
           colors={['transparent', 'rgba(0,0,0,0.7)']}
-          style={[styles.bottomOverlay, { paddingBottom: insets.bottom + 20 }]}
+          style={[styles.bottomOverlay, { paddingBottom: insets.bottom + 20 + 85 }]}
         >
           <View style={styles.bottomControls}>
             <TouchableOpacity
